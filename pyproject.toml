@@ -1,0 +1,86 @@
+# Ref
+# 1. https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+[project]
+name = "isic2024"
+description = "A Python package for kaggle competition."
+version = "0.1.0"
+authors = [{ name = "daikichiba9511", email = "daikichiba.tech.ml@gmail.com" }]
+requires-python = ">= 3.10"
+
+dependencies = [
+    "numpy<2.0.0",
+    "pandas",
+    "polars",
+    "hvplot",
+    "pydantic",
+    "timm",
+    "joblib",
+    "scikit-learn",
+    "h5py",
+    "xgboost",
+]
+[project.optional-dependencies]
+dev = [
+    "matplotlib",
+    "japanize-matplotlib",
+    "seaborn",
+    "wandb",
+    "ruff",
+    "pytest",
+    "mypy",
+    "jupyterlab",
+    "quarto",
+    "kaggle",
+    "torchinfo",
+]
+
+# [build-system]
+# requires = ["hatchling"]
+# build-backend = "hatchling.build"
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+preview = true
+target-version = "py310"
+line-length = 119
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "W", "I"]
+ignore = [
+    "E203", # white space before ':', not compatible with black
+    "E501", # line-length violation
+    "B905", # zip iterator without strict parameter
+]
+unfixable = ["B"]
+exclude = [
+    "git",
+    ".venv",
+    "__pycache__",
+    ".github",
+    ".mypy_cache",
+    ".vscode",
+    ".pytest_cache",
+    "notebooks",
+    ".ipynb_checkpoints",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+disallow_untyped_defs = true
+allow_redefinition = true
+warn_redundant_casts = true
+show_error_context = true
+incremental = false
+no_implicit_optional = true
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+disallow_incomplete_defs = true
+warn_no_return = true
+plugins = ["numpy.typing.mypy_plugin", "pydantic.mypy"]

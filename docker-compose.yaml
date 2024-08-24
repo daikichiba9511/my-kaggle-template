@@ -1,0 +1,22 @@
+services:
+  local-dev:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: kaggle-dev-environment-isic2024
+    container_name: kaggle-dev-container-isic2024
+    shm_size: 120g
+    ports:
+      - "127.0.0.1:9897:9897"
+    tty: true
+    stdin_open: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [ gpu ]
+    volumes:
+      - .:/workspace/working
+      - ${HOME}/.ssh:/home/docker/.ssh
+      - ${HOME}/.kaggle:/home/docker/.kaggle
