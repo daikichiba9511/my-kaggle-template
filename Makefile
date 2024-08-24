@@ -1,19 +1,20 @@
 .DEFAULT_GOAL := help
 SHELL := /usr/bin/env bash
-COMPE := 
+COMPE :=
 PYTHONPATH := $(shell pwd)
 
 .PHONY: setup
 setup: ## setup install packages
 	@python -m pip install --upgrade pip setuptools wheel
 	@python -m pip install -e .
-	@python -m pip install -e .[dev]
+	@python -m pip install -e .[dev] --no-warn-script-location
 	# if command -v uv &> /dev/null; then \
 	# 	echo bootstrap of uv; \
 	# 	curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	# fi
 	# @uv python pin 3.10
 	# @uv sync
+	@echo "Setup Done ✅"
 
 .PHONY: download_data
 download_data: ## download data from competition page
@@ -31,7 +32,7 @@ lint: ## lint code
 
 .PHONY: mypy
 mypy: ## typing check
-	@mypy --config-file pyproject.toml scirpts src
+	@mypy --config-file pyproject.toml scripts src
 
 .PHONY: fmt
 fmt: ## auto format
@@ -44,7 +45,8 @@ test: ## run test with pytest
 
 .PHONY: setup-dev
 setup-dev: ## setup my dev env by installing my dotfiles
-	git clone git@github.com:daikichiba9511/dotfiles.git ~/dotfiles && cd ~/dotfiles && bash setup.sh && cd -
+	[ ! -d ~/dotfiles ] && git@github.com:daikichiba9511/dotfiles.git ~/dotfiles ;\
+	cd ~/dotfiles && bash setup.sh && cd -
 
 .PHONY: lock
 lock: ## lock dependencies

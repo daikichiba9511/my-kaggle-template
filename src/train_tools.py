@@ -1,6 +1,7 @@
 import logging
 import pathlib
-from typing import Sequence, cast
+import pprint
+from typing import Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -78,7 +79,6 @@ def get_model_state_dict(model: nn.Module) -> dict[str, nn.Parameter]:
         logger.info("Detect compiled model. Accessing original model by _orig_mod")
         return model._orig_mod.state_dict()
     return model.state_dict()
-    
 
 
 class EarlyStopping:
@@ -88,15 +88,14 @@ class EarlyStopping:
         is_maximise: bool = True,
         delta: float = 0.0,
     ) -> None:
-
         self._patience = patience
         self._is_maximise = is_maximise
-        self._counter = 0
         self.best_score = float("-inf") if self._is_maximise else float("inf")
         self._delta = delta
+        self._reset_counter()
         self.is_improved = False
 
-    def _check_enable_to_update(self, score: float, best_score: float) -> bool:
+    def _can_update(self, score: float, best_score: float) -> bool:
         if self._is_maximise:
             self.is_improved = score + self._delta > best_score
             return self.is_improved
@@ -104,19 +103,25 @@ class EarlyStopping:
             self.is_improved = score + self._delta < best_score
             return self.is_improved
 
+    def _reset_counter(self) -> None:
+        self._counter = 0
+
+    def _update_counter(self) -> None:
+        self._counter += 1
+
     def _save(self, model: nn.Module, save_path: pathlib.Path) -> None:
         state = get_model_state_dict(model)
         torch.save(state, save_path)
         logger.info(f"Saved model {model.__class__.__name__}({type(model)}) to {save_path}")
 
     def check(self, score: float, model: nn.Module, save_path: pathlib.Path) -> None:
-        if self._check_enable_to_update(score, self.best_score):
+        if self._can_update(score, self.best_score):
             logger.info(f"Score improved from {self.best_score} to {score}")
             self.best_score = score
-            self._counter = 0
+            self._reset_counter()
             self._save(model, save_path)
         else:
-            self._counter += 1
+            self._update_counter()
             logger.info(
                 f"EarlyStopping counter: {self._counter} out of {self._patience}. " + f"best: {self.best_score}"
             )
@@ -135,8 +140,7 @@ class MetricsMonitor:
         if "epoch" in metrics:
             raise ValueError("epoch is reserved word. Please use another key name")
 
-        _metrics = pd.DataFrame(metrics)  # type: ignore
-
+        _metrics = pl.from_dict({k: [v] for k, v in metrics.items()})
         if self._metrics_df.is_empty():
             self._metrics_df = _metrics
         else:
@@ -144,10 +148,13 @@ class MetricsMonitor:
 
         if wandb.run is not None:
             wandb.log(metrics)
+        logger.info(f"Metrics updated: {pprint.pformat(metrics)}")
 
     def show(self, log_interval: int = 1) -> None:
         """print metrics to logger"""
-        logging_metrics = self._metrics_df.filter(pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval))))
+        logging_metrics = self._metrics_df.filter(
+            pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval)))
+        )
         logger.info(f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}")
 
     def plot(
@@ -182,15 +189,15 @@ def make_oof(
     x: npt.NDArray,
     y: npt.NDArray,
     y_pred: npt.NDArray,
-    feature_names: list[str],
+    x_names: list[str],
     y_names: list[str],
-    id: list[str] | None = None,
+    sample_id: list[str] | None = None,
 ) -> pl.DataFrame:
     y_pred_names = [f"{y_name}_pred" for y_name in y_names]
-    x_df = pl.DataFrame(x, feature_names, orient="row")
+    x_df = pl.DataFrame(x, x_names, orient="row")
     y_df = pl.DataFrame(y, y_names, orient="row")
     y_pred_df = pl.DataFrame(y_pred, y_pred_names, orient="row")
-    if id is None:
+    if sample_id is None:
         return pl.concat([x_df, y_df, y_pred_df], how="horizontal")
-    id_df = pl.DataFrame(id, ["sample_id"], orient="row")
+    id_df = pl.DataFrame(sample_id, ["sample_id"], orient="row")
     return pl.concat([id_df, x_df, y_df, y_pred_df], how="horizontal")

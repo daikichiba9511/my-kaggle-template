@@ -1,0 +1,8 @@
+input
+output
+__pycache__
+tmp
+.vscode
+wandb
+build
+*.egg-info*

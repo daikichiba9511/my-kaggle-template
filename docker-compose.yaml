@@ -7,7 +7,7 @@ services:
     container_name: kaggle-dev-container
     shm_size: 120g
     ports:
-      - "127.0.0.1:9897:9897"
+      - "127.0.0.1:9898:9898"
     tty: true
     stdin_open: true
     deploy:

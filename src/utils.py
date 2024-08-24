@@ -1,19 +1,18 @@
 import contextlib
-import itertools
 import math
 import os
 import pathlib
+import pprint
 import random
 import subprocess
 import time
 from logging import getLogger
-from typing import Any, Generator, Sequence, TypeVar
+from typing import Any, Generator
 
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import polars as pl
 import psutil
 import seaborn as sns
@@ -21,8 +20,7 @@ import torch
 from matplotlib import axes, figure
 from matplotlib.pyplot import cm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from sklearn.metrics import auc, confusion_matrix
-from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix
 from sklearn.utils.multiclass import unique_labels
 from torchinfo import summary
 from tqdm.auto import tqdm
@@ -100,10 +98,14 @@ def get_commit_hash_head() -> str:
     return result.stdout.decode("utf-8")[:-1]
 
 
+def pinfo(msg: dict[str, Any]) -> None:
+    logger.info(pprint.pformat(msg))
+
+
 def reduce_memory_usage_pl(df: pl.DataFrame, name: str) -> pl.DataFrame:
     print(f"Memory usage of dataframe {name} is {round(df.estimated_size('mb'), 2)} MB")
-    Numeric_Int_types = [pl.Int8, pl.Int16, pl.Int32, pl.Int64]
-    Numeric_Float_types = [pl.Float32, pl.Float64]
+    numeric_int_types = [pl.Int8, pl.Int16, pl.Int32, pl.Int64]
+    numeric_float_types = [pl.Float32, pl.Float64]
     float32_tiny = np.finfo(np.float32).tiny.astype(np.float64)
     float32_min = np.finfo(np.float32).min.astype(np.float64)
     float32_max = np.finfo(np.float32).max.astype(np.float64)
@@ -111,7 +113,7 @@ def reduce_memory_usage_pl(df: pl.DataFrame, name: str) -> pl.DataFrame:
         col_type = df[col].dtype
         c_min = df[col].to_numpy().min()
         c_max = df[col].to_numpy().max()
-        if col_type in Numeric_Int_types:
+        if col_type in numeric_int_types:
             if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:  # type: ignore
                 df = df.with_columns(df[col].cast(pl.Int8))
             elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:  # type: ignore
@@ -120,20 +122,16 @@ def reduce_memory_usage_pl(df: pl.DataFrame, name: str) -> pl.DataFrame:
                 df = df.with_columns(df[col].cast(pl.Int32))
             elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:  # type: ignore
                 df = df.with_columns(df[col].cast(pl.Int64))
-        elif col_type in Numeric_Float_types:
+        elif col_type in numeric_float_types:
             if (
                 (float32_min < c_min < float32_max)
                 and (float32_min < c_max < float32_max)
-                and (abs(c_min) > float32_tiny)
+                and (abs(c_min) > float32_tiny)  # 規格化定数で丸め込み誤差を補正
                 and (abs(c_max) > float32_tiny)
             ):
                 df = df.with_columns(df[col].cast(pl.Float32).alias(col))
-            else:
-                pass
         elif col_type == pl.Utf8:
             df = df.with_columns(df[col].cast(pl.Categorical))
-        else:
-            pass
     print(f"Memory usage of dataframe {name} became {round(df.estimated_size('mb'), 2)} MB")
     return df
 
@@ -168,31 +166,34 @@ def show_model(model: torch.nn.Module, input_shape: tuple[int, ...] = (3, 224, 2
     summary(model, input_size=input_shape)
 
 
-def plot_image_pairs(
-    images: Sequence[torch.Tensor | npt.NDArray[Any]],
+def plot_images(
+    images: torch.Tensor | npt.NDArray,
     title: str,
     save_path: pathlib.Path | None = None,
+    figsize: tuple[int, int] = (30, 15),
 ) -> None:
     """
     Args:
-        images: list of images to plot. image shape should be (C, H, W)
+        images: list of images to plot. (n, h, w, c) or (n, c, h, w)
     """
+    if isinstance(images, torch.Tensor) and images.shape[-1] != 3:
+        images = images.permute(0, 2, 3, 1).cpu().numpy()
+    elif isinstance(images, np.ndarray) and images.shape[-1] != 3:
+        images = np.transpose(images, (0, 2, 3, 1))
+
     n_rows = len(images)
     if n_rows > 5:
         raise ValueError("Too many images to plot")
 
-    fig, ax = plt.subplots(1, n_rows, figsize=(10, 5))
+    fig, ax = plt.subplots(1, n_rows, figsize=figsize)
     for i, img in enumerate(images):
-        if isinstance(img, torch.Tensor):
-            img = img.permute(1, 2, 0).cpu().numpy()
         ax[i].imshow(img, label=f"image_{i}")
-        ax[i].set_title(f"image_{i}")
+        ax[i].set_title(f"image_{i}", fontsize="small")
 
     # -- draw object overlay here
 
     # -- draw title & plot/save
-    fig.suptitle(title)
-
+    fig.suptitle(title, fontsize="small")
     fig.tight_layout()
     if save_path is None:
         plt.show()
@@ -279,15 +280,16 @@ def plot_confusion_matrix(
     return fig, ax
 
 
-def save_importances(importances_: pd.DataFrame, save_fp: pathlib.Path, figsize: tuple[int, int] = (14, 30)) -> None:
-    mean_gain = importances_[["gain", "feature"]].groupby("feature").mean()
-    importances_["mean_gain"] = importances_["feature"].map(mean_gain["gain"])
+def save_importances(importances: pl.DataFrame, save_fp: pathlib.Path, figsize: tuple[int, int] = (16, 30)) -> None:
+    mean_gain = importances[["gain", "feature"]].group_by("feature").mean().rename({"gain": "mean_gain"})
+    importances = importances.join(mean_gain, on="feature")
     plt.figure(figsize=figsize)
     sns.barplot(
-        x="gain",
+        x="mean_gain",
         y="feature",
-        data=importances_.sort_values("mean_gain", ascending=False)[:300],
+        data=importances.sort("mean_gain", descending=True)[:300].to_pandas(),
         color="skyblue",
     )
     plt.tight_layout()
     plt.savefig(save_fp)
+    plt.close("all")
