@@ -1,0 +1,47 @@
+{
+    "dockerComposeFile": [
+        "../docker-compose.yaml"
+    ],
+    "service": "local-dev",
+    "workspaceFolder": "/workspace/working",
+    "remoteUser": "docker",
+    "updateRemoteUserUID": true,
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "njpwerner.autodocstring",
+                "ms-vscode-remote.remote-containers",
+                "ms-azuretools.vscode-docker",
+                "usernamehw.errorlens",
+                "GitHub.copilot",
+                "GitHub.copilot-chat",
+                "GitHub.vscode-pull-request-github",
+                "ms-toolsai.jupyter",
+                "ms-toolsai.vscode-jupyter-cell-tags",
+                "ms-toolsai.jupyter-keymap",
+                "ms-toolsai.jupyter-renderers",
+                "ms-toolsai.vscode-jupyter-slideshow",
+                "ms-python.vscode-pylance",
+                "ms-python.python",
+                "KevinRose.vsc-python-indent",
+                "ms-vscode-remote.remote-ssh",
+                "ms-vscode-remote.remote-ssh-edit",
+                "ms-vscode.remote-explorer",
+                "wayou.vscode-todo-highlight",
+                "Gruntfuggly.todo-tree",
+                "charliermarsh.ruff",
+                "github.vscode-github-actions",
+                "tamasfe.even-better-toml",
+                "oderwat.indent-rainbow",
+                "yzhang.markdown-all-in-one",
+                "ionutvmi.path-autocomplete",
+                "ms-vscode.vscode-speech",
+                "eamodio.gitlens",
+                "PKief.material-icon-theme",
+                "ms-python.mypy-type-checker",
+                "IBM.output-colorizer",
+                "asvetliakov.vscode-neovim"
+            ]
+        }
+    }
+}

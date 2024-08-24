@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile
-    image: kaggle-dev-environment-isic2024
-    container_name: kaggle-dev-container-isic2024
+    image: kaggle-dev-environment
+    container_name: kaggle-dev-container
     shm_size: 120g
     ports:
       - "127.0.0.1:9897:9897"
