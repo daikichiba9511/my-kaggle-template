@@ -1,10 +1,9 @@
 import logging
 import pathlib
-from typing import Literal, Sequence, cast
+from typing import Sequence, cast
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import polars as pl
 import torch
 import torch.nn as nn
@@ -58,6 +57,7 @@ class AverageMeter:
         if value in [np.nan, np.inf, -np.inf, float("inf"), float("-inf"), float("nan")]:
             logger.info("Skip nan or inf value")
             return None
+
         self.value = value
         self.sum += value * n
         self.count += n
@@ -72,25 +72,32 @@ class AverageMeter:
         }
 
 
+def get_model_state_dict(model: nn.Module) -> dict[str, nn.Parameter]:
+    if hasattr(model, "_orig_mod"):
+        # compileしたmodel
+        logger.info("Detect compiled model. Accessing original model by _orig_mod")
+        return model._orig_mod.state_dict()
+    return model.state_dict()
+    
+
+
 class EarlyStopping:
     def __init__(
         self,
         patience: int,
-        direction: Literal["max", "min"] = "min",
+        is_maximise: bool = True,
         delta: float = 0.0,
     ) -> None:
-        if direction not in ["max", "min"]:
-            raise ValueError(f"{direction = }")
 
         self._patience = patience
-        self._direction = direction
+        self._is_maximise = is_maximise
         self._counter = 0
-        self.best_score = float("-inf") if direction == "max" else float("inf")
+        self.best_score = float("-inf") if self._is_maximise else float("inf")
         self._delta = delta
         self.is_improved = False
 
-    def _is_improved(self, score: float, best_score: float) -> bool:
-        if self._direction == "max":
+    def _check_enable_to_update(self, score: float, best_score: float) -> bool:
+        if self._is_maximise:
             self.is_improved = score + self._delta > best_score
             return self.is_improved
         else:
@@ -98,17 +105,12 @@ class EarlyStopping:
             return self.is_improved
 
     def _save(self, model: nn.Module, save_path: pathlib.Path) -> None:
-        if hasattr(model, "_orig_mod"):
-            # compileしたmodel
-            logger.info("Detect compiled model. Accessing original model by _orig_mod")
-            state = model._orig_mod.state_dict()
-        else:
-            state = model.state_dict()
+        state = get_model_state_dict(model)
         torch.save(state, save_path)
         logger.info(f"Saved model {model.__class__.__name__}({type(model)}) to {save_path}")
 
     def check(self, score: float, model: nn.Module, save_path: pathlib.Path) -> None:
-        if self._is_improved(score, self.best_score):
+        if self._check_enable_to_update(score, self.best_score):
             logger.info(f"Score improved from {self.best_score} to {score}")
             self.best_score = score
             self._counter = 0
@@ -120,36 +122,39 @@ class EarlyStopping:
             )
 
     @property
-    def is_early_stop(self) -> bool:
+    def is_early_stopping(self) -> bool:
         return self._counter >= self._patience
 
 
 class MetricsMonitor:
     def __init__(self, metrics: Sequence[str]) -> None:
         self.metrics = metrics
-        self._metrics_df = pd.DataFrame(columns=[*metrics])  # type: ignore
+        self._metrics_df = pl.DataFrame()
 
     def update(self, metrics: dict[str, float | int]) -> None:
-        epoch = cast(int, metrics.pop("epoch"))
-        _metrics = pd.DataFrame(metrics, index=[epoch])  # type: ignore
-        if self._metrics_df.empty:
+        if "epoch" in metrics:
+            raise ValueError("epoch is reserved word. Please use another key name")
+
+        _metrics = pd.DataFrame(metrics)  # type: ignore
+
+        if self._metrics_df.is_empty():
             self._metrics_df = _metrics
         else:
-            self._metrics_df = pd.concat([self._metrics_df, _metrics], axis=0)
+            self._metrics_df = pl.concat([self._metrics_df, _metrics], how="vertical").sort(by="epoch")
 
         if wandb.run is not None:
             wandb.log(metrics)
 
     def show(self, log_interval: int = 1) -> None:
         """print metrics to logger"""
-        logging_metrics: pd.DataFrame = self._metrics_df.iloc[list(range(0, len(self._metrics_df), log_interval))]
-        logger.info(f"\n{logging_metrics.to_markdown()}")
+        logging_metrics = self._metrics_df.filter(pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval))))
+        logger.info(f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}")
 
     def plot(
         self,
         save_path: pathlib.Path,
         col: str | Sequence[str],
-        figsize: tuple[int, int] = (8, 6),
+        figsize: tuple[int, int] = (14, 12),
     ) -> None:
         fig, ax = plt.subplots(figsize=figsize)
         assert isinstance(ax, axes.Axes)
@@ -159,14 +164,18 @@ class MetricsMonitor:
         for c in col:
             data = self._metrics_df[c].to_numpy()
             ax.plot(data, label=c)
-        ax.set_xlabel("epoch")
-        ax.set_ylabel(",".join(col))
+
+        ax.set_xlabel("epoch", fontsize="small")
+        ax.set_ylabel(",".join(col), fontsize="small")
         ax.legend()
+        fig.tight_layout()
         fig.savefig(save_path)
+        plt.close("all")
 
     def save(self, save_path: pathlib.Path, fold: int) -> None:
-        self._metrics_df["fold"] = fold
-        self._metrics_df.to_csv(save_path, index=False)
+        self._metrics_df = self._metrics_df.with_columns(fold=pl.lit(fold))
+        self._metrics_df.write_csv(save_path)
+        logger.info(f"Saved metrics to {save_path}")
 
 
 def make_oof(
