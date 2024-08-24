@@ -1,5 +1,4 @@
 import numpy.typing as npt
-import torch
 
 
 def score(
