@@ -202,6 +202,7 @@ def main() -> None:
                 dir="./src",
             )
         model, ema_model = models.get_model(cfg.model_name, cfg.model_params)
+        model, ema_model = models.compile_models(model, ema_model)
         train_loader, valid_loader = init_dataloader(cfg.train_batch_size, cfg.valid_batch_size, cfg.num_workers)
         optimizer = optim.get_optimizer(cfg.optimizer_name, cfg.optimizer_params, model=model)
         scheduler = optim.get_scheduler(cfg.scheduler_name, cfg.scheduler_params, optimizer=optimizer)

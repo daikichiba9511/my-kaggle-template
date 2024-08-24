@@ -1,4 +1,4 @@
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, cast
 
 import torch
 import torch.nn as nn
@@ -22,6 +22,16 @@ def get_model(model_name: str, model_params: dict[str, Any]) -> tuple[Models, Mo
         ema_model = ModelEmaV3(model, decay=0.9998)
         return model, ema_model
     raise ValueError(f"Unknown model name: {model_name}")
+
+
+def compile_models(
+    model: Models, ema_model: ModelEmaV3, compile_mode: str = "max-autotune", dynamic: bool = False
+) -> tuple[Models, ModelEmaV3]:
+    compiled_model = torch.compile(model, mode=compile_mode, dynamic=dynamic)
+    compiled_model = cast(Models, compiled_model)
+    compiled_ema_model = torch.compile(ema_model, mode=compile_mode, dynamic=dynamic)
+    compiled_ema_model = cast(ModelEmaV3, compiled_ema_model)
+    return compiled_model, compiled_ema_model
 
 
 if __name__ == "__main__":
