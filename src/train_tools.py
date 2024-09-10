@@ -47,6 +47,9 @@ class AverageMeter:
     def __str__(self) -> str:
         return f"Metrics {self.name}: Avg {self.avg}"
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
     def reset(self) -> None:
         self.val = 0.0
         self.avg = 0.0
@@ -71,6 +74,30 @@ class AverageMeter:
             "avg": self.avg,
             "raw_values": self.raws,
         }
+
+
+class AverageMeters:
+    def __init__(self, names: Sequence[str]) -> None:
+        self.meters = {name: AverageMeter(name) for name in names}
+
+    def __str__(self) -> str:
+        return "\n".join([str(meter) for meter in self.meters.values()])
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def update(self, values: dict[str, float | int], n: int = 1) -> None:
+        for name, value in values.items():
+            if name not in self.meters:
+                raise ValueError(f"Name {name} is not in the meters" + f"Available names are {self.meters.keys()}")
+            self.meters[name].update(value, n)
+
+    def reset(self) -> None:
+        for meter in self.meters.values():
+            meter.reset()
+
+    def to_dict(self) -> dict[str, dict[str, list[float | int] | str | float]]:
+        return {name: meter.to_dict() for name, meter in self.meters.items()}
 
 
 def get_model_state_dict(model: nn.Module) -> dict[str, nn.Parameter]:
