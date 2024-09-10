@@ -45,12 +45,12 @@ def train_one_epoch(
     loader: torch_data.DataLoader,
     device: torch.device,
     use_amp: bool,
+    scaler: amp.GradScaler | None = None,
 ) -> tuple[float, float]:
     model = model.train()
     pbar = tqdm(enumerate(loader), total=len(loader), desc="Train", dynamic_ncols=True)
     loss_meter = train_tools.AverageMeter("train/loss")
     for _batch_idx, batch in pbar:
-        ema_model.update(model)
         x, y = batch
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
         with amp.autocast(enabled=use_amp, dtype=torch.float16):
@@ -58,10 +58,16 @@ def train_one_epoch(
         y_pred = output
         loss = criterion(y_pred, y)
 
-        loss.backward()
-        optimizer.step()
         optimizer.zero_grad()
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
         scheduler.step()
+        ema_model.update(model)
 
         loss = loss.detach().cpu().item()
         loss_meter.update(loss)
