@@ -8,6 +8,25 @@ from torch.optim import lr_scheduler
 logger = getLogger(__name__)
 
 
+def get_params_no_decay(
+    model: torch.nn.Module,
+    weight_decay: float,
+    no_decay: tuple[str, ...] = ("bias", "LayerNorm.bias", "LayerNorm.weight"),
+) -> list[dict[str, Any]]:
+    model_params = list(model.named_parameters())
+    params = [
+        {
+            "params": [p for n, p in model_params if not any(nd in n for nd in no_decay)],
+            "weight_decay": weight_decay,
+        },
+        {
+            "params": [p for n, p in model_params if any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
+        },
+    ]
+    return params
+
+
 def get_optimizer(
     optimizer_name: str, optmizer_params: dict[str, Any], model: torch.nn.Module
 ) -> torch.optim.Optimizer:
@@ -22,7 +41,8 @@ def get_optimizer(
         torch.optim.Optimizer: optimizer
     """
     if optimizer_name == "AdamW":
-        optimizer = torch.optim.AdamW(model.parameters(), **optmizer_params)
+        model_params = get_params_no_decay(model, weight_decay=optmizer_params["weight_decay"])
+        optimizer = torch.optim.AdamW(model_params, **optmizer_params)
         return optimizer
     raise ValueError(f"Unknown optimizer name: {optimizer_name}")
 
