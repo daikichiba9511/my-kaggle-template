@@ -211,7 +211,13 @@ def main() -> None:
         model, ema_model = models.compile_models(model, ema_model)
         train_loader, valid_loader = init_dataloader(cfg.train_batch_size, cfg.valid_batch_size, cfg.num_workers)
         optimizer = optim.get_optimizer(cfg.optimizer_name, cfg.optimizer_params, model=model)
-        scheduler = optim.get_scheduler(cfg.scheduler_name, cfg.scheduler_params, optimizer=optimizer)
+        if cfg.scheduler_params.get("num_training_steps") == -1:
+            scheduler_params = optim.setup_scheduler_params(
+                cfg.scheduler_params, num_step_per_epoch=len(train_loader), n_epoch=cfg.n_epochs
+            )
+        else:
+            scheduler_params = cfg.scheduler_params
+        scheduler = optim.get_scheduler(cfg.scheduler_name, scheduler_params, optimizer=optimizer)
         criterion = get_loss_fn(cfg.train_loss_name, cfg.train_loss_params)
         metrics = train_tools.MetricsMonitor(metrics=["epoch", "train/loss", "lr", "valid/loss", "valid/score"])
         best_score, best_oof = 0.0, pl.DataFrame()

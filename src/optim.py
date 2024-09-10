@@ -1,8 +1,11 @@
+from logging import getLogger
 from typing import Any, TypeAlias
 
 import torch
 import transformers
 from torch.optim import lr_scheduler
+
+logger = getLogger(__name__)
 
 
 def get_optimizer(
@@ -25,6 +28,17 @@ def get_optimizer(
 
 
 Schedulers: TypeAlias = lr_scheduler.LRScheduler | lr_scheduler.LambdaLR
+
+
+def setup_scheduler_params(
+    scheduler_params: dict[str, Any], num_step_per_epoch: int, n_epoch: int, warmup_epochs: int = 1
+) -> dict[str, Any]:
+    _scheduler_params = {**scheduler_params}
+    num_total_steps = num_step_per_epoch * n_epoch
+    scheduler_params["num_training_steps"] = num_total_steps
+    scheduler_params["num_warmup_steps"] = int((num_total_steps / n_epoch) * warmup_epochs)
+    logger.info(f"Update scheduler_params: {scheduler_params}")
+    return _scheduler_params
 
 
 def get_scheduler(
