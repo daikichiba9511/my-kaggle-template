@@ -40,7 +40,7 @@
                 "PKief.material-icon-theme",
                 "ms-python.mypy-type-checker",
                 "IBM.output-colorizer",
-                "asvetliakov.vscode-neovim"
+                "vscodevim.vim"
             ]
         }
     }
