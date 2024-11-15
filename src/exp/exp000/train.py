@@ -21,6 +21,7 @@ EXP_NO = __file__.split("/")[-2]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--compile", action="store_true")
     return parser.parse_args()
 
 
@@ -208,7 +209,9 @@ def main() -> None:
                 dir="./src",
             )
         model, ema_model = models.get_model(cfg.model_name, cfg.model_params)
-        model, ema_model = models.compile_models(model, ema_model)
+        if args.compile:
+            model, ema_model = models.compile_models(model, ema_model)
+        model, ema_model = model.to(cfg.device), ema_model.to(cfg.device)
         train_loader, valid_loader = init_dataloader(cfg.train_batch_size, cfg.valid_batch_size, cfg.num_workers)
         optimizer = optim.get_optimizer(cfg.optimizer_name, cfg.optimizer_params, model=model)
         if cfg.scheduler_params.get("num_training_steps") == -1:
@@ -255,7 +258,8 @@ def main() -> None:
         # -- Save Results
         best_oof.write_csv(cfg.output_dir / f"oof_{fold}.csv")
         metrics.save(cfg.output_dir / f"metrics_{fold}.csv", fold=fold)
-        torch.save(ema_model.module.state_dict(), cfg.output_dir / f"last_model_{fold}.pth")
+        model_state = train_tools.get_model_state_dict(ema_model.module)
+        torch.save(model_state, cfg.output_dir / f"last_model_{fold}.pth")
 
         if run is not None:
             run.finish()
