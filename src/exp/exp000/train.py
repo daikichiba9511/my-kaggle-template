@@ -259,7 +259,9 @@ def main() -> None:
         best_oof.write_csv(cfg.output_dir / f"oof_{fold}.csv")
         metrics.save(cfg.output_dir / f"metrics_{fold}.csv", fold=fold)
         model_state = train_tools.get_model_state_dict(ema_model.module)
-        torch.save(model_state, cfg.output_dir / f"last_model_{fold}.pth")
+        save_fp_model = cfg.output_dir / f"last_model_{fold}.pth"
+        torch.save(model_state, save_fp_model)
+        logger.info(f"Saved model to {save_fp_model}")
 
         if run is not None:
             run.finish()
