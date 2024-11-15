@@ -55,9 +55,9 @@ def setup_scheduler_params(
 ) -> dict[str, Any]:
     _scheduler_params = {**scheduler_params}
     num_total_steps = num_step_per_epoch * n_epoch
-    scheduler_params["num_training_steps"] = num_total_steps
-    scheduler_params["num_warmup_steps"] = int((num_total_steps / n_epoch) * warmup_epochs)
-    logger.info(f"Update scheduler_params: {scheduler_params}")
+    _scheduler_params["num_training_steps"] = num_total_steps
+    _scheduler_params["num_warmup_steps"] = int((num_total_steps / n_epoch) * warmup_epochs)
+    logger.info(f"Update scheduler_params: {_scheduler_params}")
     return _scheduler_params
 
 
