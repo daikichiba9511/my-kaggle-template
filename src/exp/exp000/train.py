@@ -123,10 +123,9 @@ def valid_one_epoch(
     model = model.eval()
     pbar = tqdm(enumerate(loader), total=len(loader), desc="Valid", dynamic_ncols=True)
     loss_meter = train_tools.AverageMeter("valid/loss")
-    score_meter = train_tools.AverageMeter("valid/score")
-    oof: list[pl.DataFrame] = []
+    oofs: list[pl.DataFrame] = []
     for batch_idx, batch in pbar:
-        x, y = batch
+        sample_id, x, y = batch
         x = x.to(device, non_blocking=True)
         with torch.inference_mode():
             output = model(x)
@@ -135,24 +134,19 @@ def valid_one_epoch(
         loss = criterion(y_pred.detach().cpu(), y)
         loss_meter.update(loss.item())
 
-        valid_score = metrics.score(y_true=y, y_pred=y_pred)
-        score_meter.update(valid_score)
-
-        oof.append(
-            train_tools.make_oof(
-                x=x.detach().cpu().numpy(),
-                y=y.detach().cpu().numpy(),
-                y_pred=y_pred.detach().cpu().numpy(),
-                x_names=["image_path"],
-                y_names=["target"],
-                sample_id=None,
-            )
+        oofs.append(
+            pl.DataFrame({
+                "sample_id": sample_id,
+                "y": y.cpu().detach().numpy(),
+                "y_pred": y_pred.cpu().detach().numpy(),
+            })
         )
         if batch_idx % 20 == 0:
-            pbar.set_postfix_str(f"Loss:{loss_meter.avg:.4f} AvgScore:{score_meter.avg:.4f}")
+            pbar.set_postfix_str(f"Loss:{loss_meter.avg:.4f}")
 
-    oof_df = pl.concat(oof)
-    return loss_meter.avg, score_meter.avg, oof_df
+    oof = pl.concat(oofs)
+    valid_score = metrics.score(y_true=oof["y"].to_numpy(), y_pred=oof["y_pred"].to_numpy())
+    return loss_meter.avg, valid_score, oof
 
 
 # =============================================================================
