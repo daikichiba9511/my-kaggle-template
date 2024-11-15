@@ -1,6 +1,6 @@
 import argparse
-import importlib
 import multiprocessing as mp
+import pathlib
 from typing import Any, Callable
 
 import polars as pl
@@ -9,10 +9,13 @@ import torch
 import torch.nn as nn
 import torch.utils.data as torch_data
 import wandb
-from torch.cuda import amp
+from torch.amp import autocast_mode, grad_scaler
 from tqdm.auto import tqdm
+from typing_extensions import TypeAlias
 
 from src import constants, log, metrics, optim, train_tools, utils
+
+from . import config, models
 
 logger = log.get_root_logger()
 EXP_NO = __file__.split("/")[-2]
@@ -25,12 +28,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-LossFn = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+LossFn: TypeAlias = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 
 def get_loss_fn(loss_name: str, loss_params: dict[str, Any]) -> LossFn:
     if loss_name == "BCEWithLogitsLoss":
         return nn.BCEWithLogitsLoss(**loss_params)
+    if loss_name == "CrossEntropyLoss":
+        return nn.CrossEntropyLoss(**loss_params)
     if loss_name == "MSELoss":
         return nn.MSELoss(**loss_params)
     raise ValueError(f"Unknown loss name: {loss_name}")
@@ -46,22 +51,42 @@ def train_one_epoch(
     loader: torch_data.DataLoader,
     device: torch.device,
     use_amp: bool,
-    scaler: amp.GradScaler | None = None,
+    scaler: grad_scaler.GradScaler | None = None,
 ) -> tuple[float, float]:
+    """
+    Args:
+        epoch: number of epoch
+        model: model to train
+        ema_model: timm_utils.ModelEmaV3
+        optimizer: torch.optim.Optimizer. I almost use AdamW.
+        scheduler: optim.Schedulers. I almost use transformers.get_cosine_schedule_with_warmup
+        criterion: LossFn. see get_loss_fn.
+        loader: torch_data.DataLoader for training set
+        device: torch.device
+        use_amp: If True, use auto mixed precision. I use f16 as dtype.
+        scaler: grad_scaler.GradScaler | None
+
+
+    Returns:
+        loss_meter.avg: float
+        lr : float
+    """
+    lr = scheduler.get_last_lr()[0]
     model = model.train()
     pbar = tqdm(enumerate(loader), total=len(loader), desc="Train", dynamic_ncols=True)
     loss_meter = train_tools.AverageMeter("train/loss")
     for _batch_idx, batch in pbar:
         x, y = batch
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-        with amp.autocast(enabled=use_amp, dtype=torch.float16):
+        with autocast_mode.autocast(device_type=device.type, enabled=use_amp, dtype=torch.float16):
             output = model(x)
         y_pred = output
         loss = criterion(y_pred, y)
 
         optimizer.zero_grad()
         if scaler is not None:
-            scaler.scale(loss).backward()
+            scaled_loss = scaler.scale(loss)
+            scaled_loss.backward()
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -74,7 +99,7 @@ def train_one_epoch(
         loss_meter.update(loss)
         pbar.set_postfix_str(f"Loss:{loss_meter.avg:.4f},Epoch:{epoch}")
 
-    return loss_meter.avg, optimizer.param_groups[0]["lr"]
+    return loss_meter.avg, lr
 
 
 def valid_one_epoch(
@@ -84,7 +109,13 @@ def valid_one_epoch(
     device: torch.device,
 ) -> tuple[float, float, pl.DataFrame]:
     """
-    Returns:
+    Args:
+        model: nn.Module
+        loader: torch_data.DataLoader for validation set
+        criterion: LossFn
+        device: torch.device
+
+    Returns: tuple
         loss: float
         score: float
         oof_df: pl.DataFrame
@@ -127,9 +158,11 @@ def valid_one_epoch(
 # =============================================================================
 # Dataset
 # =============================================================================
+TrainBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
+ValidBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
 
 
-class MyTrainDataset(torch_data.Dataset):
+class MyTrainDataset(torch_data.Dataset[TrainBatch]):
     def __init__(self, df: pl.DataFrame) -> None:
         super().__init__()
         self.df = df
@@ -137,21 +170,41 @@ class MyTrainDataset(torch_data.Dataset):
     def __len__(self) -> int:
         return len(self.df)
 
-    def __getitem__(self, idx: int) -> tuple[str, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> TrainBatch:
+        raise NotImplementedError
+
+
+class MyValidDataset(torch_data.Dataset[ValidBatch]):
+    def __init__(self, df: pl.DataFrame) -> None:
+        super().__init__()
+        self.df = df
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> ValidBatch:
         raise NotImplementedError
 
 
 def init_dataloader(
-    train_batch_size: int, valid_batch_size: int, num_workers: int = 16
+    df_fp: pathlib.Path,
+    train_batch_size: int,
+    valid_batch_size: int,
+    num_workers: int = 16,
+    fold: int = 0,
 ) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
     if mp.cpu_count() < num_workers:
         num_workers = mp.cpu_count()
 
-    # TODO: Implement your own dataset
-    train_ds = ...  # type: ignore
-    valid_ds = ...  # type: ignore
-    assert isinstance(train_ds, torch_data.Dataset)  # type: ignore
-    assert isinstance(valid_ds, torch_data.Dataset)  # type: ignore
+    df = pl.read_csv(df_fp)
+
+    df_train = df.filter(pl.col("fold") != fold)
+    df_valid = df.filter(pl.col("fold") == fold)
+    assert len(df_train) > 0, f"df_train is empty: {df_fp=}, {fold=}"
+    assert len(df_valid) > 0, f"df_valid is empty: {df_fp=}, {fold=}"
+
+    train_ds: torch_data.Dataset[TrainBatch] = MyTrainDataset(df_train)
+    valid_ds: torch_data.Dataset[ValidBatch] = MyValidDataset(df_valid)
 
     train_dl = torch_data.DataLoader(
         dataset=train_ds,
@@ -182,19 +235,17 @@ def init_dataloader(
 
 def main() -> None:
     args = parse_args()
-    cfg_module = importlib.import_module(f"src.exp.{EXP_NO}.config")
-    models = importlib.import_module(f"src.exp.{EXP_NO}.models")
     if args.debug:
-        cfg = cfg_module.Config(is_debug=True)
+        cfg = config.Config(is_debug=True)
     else:
-        cfg = cfg_module.Config()
+        cfg = config.Config()
     utils.pinfo(cfg.model_dump())
     log.attach_file_handler(logger, str(cfg.output_dir / "train.log"))
     logger.info(f"Exp: {cfg.name}, DESC: {cfg.description}, COMMIT_HASH: {utils.get_commit_hash_head()}")
     # =============================================================================
     # TrainLoop
     # =============================================================================
-    for fold in range(cfg.n_fold):
+    for fold in range(cfg.n_folds):
         logger.info(f"Start fold: {fold}")
         utils.seed_everything(cfg.seed + fold)
         if cfg.is_debug:
@@ -212,19 +263,21 @@ def main() -> None:
         if args.compile:
             model, ema_model = models.compile_models(model, ema_model)
         model, ema_model = model.to(cfg.device), ema_model.to(cfg.device)
-        train_loader, valid_loader = init_dataloader(cfg.train_batch_size, cfg.valid_batch_size, cfg.num_workers)
-        optimizer = optim.get_optimizer(cfg.optimizer_name, cfg.optimizer_params, model=model)
-        if cfg.scheduler_params.get("num_training_steps") == -1:
+        train_loader, valid_loader = init_dataloader(
+            cfg.train_data_fp, cfg.train_batch_size, cfg.valid_batch_size, cfg.num_workers, fold
+        )
+        optimizer = optim.get_optimizer(cfg.train_optimizer_name, cfg.train_optimizer_params, model=model)
+        if cfg.train_scheduler_params.get("num_training_steps") == -1:
             scheduler_params = optim.setup_scheduler_params(
-                cfg.scheduler_params, num_step_per_epoch=len(train_loader), n_epoch=cfg.n_epochs
+                cfg.train_scheduler_params, num_step_per_epoch=len(train_loader), n_epoch=cfg.train_n_epochs
             )
         else:
-            scheduler_params = cfg.scheduler_params
-        scheduler = optim.get_scheduler(cfg.scheduler_name, scheduler_params, optimizer=optimizer)
+            scheduler_params = cfg.train_scheduler_params
+        scheduler = optim.get_scheduler(cfg.train_scheduler_name, scheduler_params, optimizer=optimizer)
         criterion = get_loss_fn(cfg.train_loss_name, cfg.train_loss_params)
         metrics = train_tools.MetricsMonitor(metrics=["epoch", "train/loss", "lr", "valid/loss", "valid/score"])
         best_score, best_oof = 0.0, pl.DataFrame()
-        for epoch in range(cfg.n_epochs):
+        for epoch in range(cfg.train_n_epochs):
             train_loss_avg, lr = train_one_epoch(
                 epoch=epoch,
                 model=model,
@@ -250,7 +303,7 @@ def main() -> None:
                 "valid/score": valid_score,
             }
             metrics.update(metric_map)
-            if epoch % cfg.log_interval == 0:
+            if epoch % cfg.train_log_interval == 0:
                 metrics.show()
             if run:
                 wandb.log(metric_map)
