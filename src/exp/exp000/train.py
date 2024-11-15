@@ -239,18 +239,18 @@ def main() -> None:
             if valid_score > best_score:
                 best_oof = valid_oof
                 best_score = valid_score
+            metric_map = {
+                "epoch": epoch,
+                "train/loss": train_loss_avg,
+                "lr": lr,
+                "valid/loss": valid_loss_avg,
+                "valid/score": valid_score,
+            }
+            metrics.update(metric_map)
+            if epoch % cfg.log_interval == 0:
+                metrics.show()
             if run:
-                metric_map = {
-                    "epoch": epoch,
-                    "train/loss": train_loss_avg,
-                    "lr": lr,
-                    "valid/loss": valid_loss_avg,
-                    "valid/score": valid_score,
-                }
                 wandb.log(metric_map)
-                metrics.update(metric_map)
-                if epoch % cfg.log_interval == 0:
-                    metrics.show()
 
         # -- Save Results
         best_oof.write_csv(cfg.output_dir / f"oof_{fold}.csv")
