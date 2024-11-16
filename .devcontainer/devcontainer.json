@@ -9,7 +9,6 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "njpwerner.autodocstring",
                 "ms-vscode-remote.remote-containers",
                 "ms-azuretools.vscode-docker",
                 "usernamehw.errorlens",
@@ -30,12 +29,10 @@
                 "wayou.vscode-todo-highlight",
                 "Gruntfuggly.todo-tree",
                 "charliermarsh.ruff",
-                "github.vscode-github-actions",
                 "tamasfe.even-better-toml",
                 "oderwat.indent-rainbow",
                 "yzhang.markdown-all-in-one",
                 "ionutvmi.path-autocomplete",
-                "ms-vscode.vscode-speech",
                 "eamodio.gitlens",
                 "PKief.material-icon-theme",
                 "ms-python.mypy-type-checker",
