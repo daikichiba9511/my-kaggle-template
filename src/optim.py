@@ -1,5 +1,5 @@
 from logging import getLogger
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias, overload
 
 import torch
 import transformers
@@ -47,12 +47,20 @@ def get_optimizer(
     raise ValueError(f"Unknown optimizer name: {optimizer_name}")
 
 
-Schedulers: TypeAlias = lr_scheduler.LRScheduler | lr_scheduler.LambdaLR
+Schedulers: TypeAlias = lr_scheduler.LRScheduler | lr_scheduler.LambdaLR | lr_scheduler.CosineAnnealingWarmRestarts
 
 
 def setup_scheduler_params(
     scheduler_params: dict[str, Any], num_step_per_epoch: int, n_epoch: int, warmup_epochs: int = 1
 ) -> dict[str, Any]:
+    """Set up scheduler parameters
+
+    Args:
+        scheduler_params (dict[str, Any]): scheduler parameters
+        num_step_per_epoch (int): number of step per epoch
+        n_epoch (int): number of epoch
+        warmup_epochs (int, optional): number of warmup epochs. Defaults to 1.
+    """
     _scheduler_params = {**scheduler_params}
     num_total_steps = num_step_per_epoch * n_epoch
     _scheduler_params["num_training_steps"] = num_total_steps
@@ -61,8 +69,24 @@ def setup_scheduler_params(
     return _scheduler_params
 
 
+@overload
 def get_scheduler(
-    scheduler_name: str, scheduler_params: dict[str, Any], optimizer: torch.optim.Optimizer
+    scheduler_name: Literal["CosineLRScheduler"], scheduler_params: dict[str, Any], optimizer: torch.optim.Optimizer
+) -> lr_scheduler.LambdaLR: ...
+
+
+@overload
+def get_scheduler(
+    scheduler_name: Literal["CosineAnnealingWarmRestarts"],
+    scheduler_params: dict[str, Any],
+    optimizer: torch.optim.Optimizer,
+) -> lr_scheduler.CosineAnnealingWarmRestarts: ...
+
+
+def get_scheduler(
+    scheduler_name: Literal["CosineLRScheduler", "CosineAnnealingWarmRestarts"],
+    scheduler_params: dict[str, Any],
+    optimizer: torch.optim.Optimizer,
 ) -> Schedulers:
     """Get scheduler from scheduler name
 
@@ -76,5 +100,8 @@ def get_scheduler(
     """
     if scheduler_name == "CosineLRScheduler":
         scheduler = transformers.get_cosine_schedule_with_warmup(optimizer, **scheduler_params)
+        return scheduler
+    if scheduler_name == "CosineAnnealingWarmRestarts":
+        scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer, **scheduler_params)
         return scheduler
     raise ValueError(f"Unknown scheduler name: {scheduler_name}")
