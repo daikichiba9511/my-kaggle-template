@@ -38,6 +38,8 @@ def get_loss_fn(loss_name: str, loss_params: dict[str, Any]) -> LossFn:
         return nn.CrossEntropyLoss(**loss_params)
     if loss_name == "MSELoss":
         return nn.MSELoss(**loss_params)
+    if loss_name == "L1Loss":
+        return nn.L1Loss(**loss_params)
     raise ValueError(f"Unknown loss name: {loss_name}")
 
 
@@ -52,6 +54,7 @@ def train_one_epoch(
     device: torch.device,
     use_amp: bool,
     scaler: grad_scaler.GradScaler | None = None,
+    max_norm: float = 1000.0,
 ) -> tuple[float, float]:
     """
     Args:
@@ -76,7 +79,7 @@ def train_one_epoch(
     pbar = tqdm(enumerate(loader), total=len(loader), desc="Train", dynamic_ncols=True)
     loss_meter = train_tools.AverageMeter("train/loss")
     for _batch_idx, batch in pbar:
-        x, y = batch
+        _sample_id, x, y = batch
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
         with autocast_mode.autocast(device_type=device.type, enabled=use_amp, dtype=torch.float16):
             output = model(x)
@@ -87,17 +90,18 @@ def train_one_epoch(
         if scaler is not None:
             scaled_loss = scaler.scale(loss)
             scaled_loss.backward()
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm)
             optimizer.step()
         scheduler.step()
         ema_model.update(model)
 
-        loss = loss.detach().cpu().item()
-        loss_meter.update(loss)
-        pbar.set_postfix_str(f"Loss:{loss_meter.avg:.4f},Epoch:{epoch}")
+        loss_meter.update(loss.detach().cpu().item())
+        pbar.set_postfix_str(f"Loss:{loss_meter.avg:.4f},Epoch:{epoch},Norm:{grad_norm:.2f}")
 
     return loss_meter.avg, lr
 
@@ -186,6 +190,7 @@ def init_dataloader(
     valid_batch_size: int,
     num_workers: int = 16,
     fold: int = 0,
+    debug: bool = False,
 ) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
     if mp.cpu_count() < num_workers:
         num_workers = mp.cpu_count()
@@ -196,6 +201,9 @@ def init_dataloader(
     df_valid = df.filter(pl.col("fold") == fold)
     assert len(df_train) > 0, f"df_train is empty: {df_fp=}, {fold=}"
     assert len(df_valid) > 0, f"df_valid is empty: {df_fp=}, {fold=}"
+    if debug:
+        df_train = df_train.head(100)
+        df_valid = df_valid.head(100)
 
     train_ds: torch_data.Dataset[TrainBatch] = MyTrainDataset(df_train)
     valid_ds: torch_data.Dataset[ValidBatch] = MyValidDataset(df_valid)
@@ -234,6 +242,7 @@ def main() -> None:
     else:
         cfg = config.Config()
     utils.pinfo(cfg.model_dump())
+    cfg.output_dir.mkdir(exist_ok=True, parents=True)
     log.attach_file_handler(logger, str(cfg.output_dir / "train.log"))
     logger.info(f"Exp: {cfg.name}, DESC: {cfg.description}, COMMIT_HASH: {utils.get_commit_hash_head()}")
     # =============================================================================
@@ -270,7 +279,7 @@ def main() -> None:
         scheduler = optim.get_scheduler(cfg.train_scheduler_name, scheduler_params, optimizer=optimizer)
         criterion = get_loss_fn(cfg.train_loss_name, cfg.train_loss_params)
         metrics = train_tools.MetricsMonitor(metrics=["epoch", "train/loss", "lr", "valid/loss", "valid/score"])
-        best_score, best_oof = 0.0, pl.DataFrame()
+        best_score, best_oof = 0.0 if cfg.train_is_maximize else float("inf"), pl.DataFrame()
         for epoch in range(cfg.train_n_epochs):
             train_loss_avg, lr = train_one_epoch(
                 epoch=epoch,
@@ -284,11 +293,13 @@ def main() -> None:
                 use_amp=cfg.train_use_amp,
             )
             valid_loss_avg, valid_score, valid_oof = valid_one_epoch(
-                model=model, loader=valid_loader, criterion=criterion, device=cfg.device
+                model=ema_model.module, loader=valid_loader, criterion=criterion, device=cfg.device
             )
-            if valid_score > best_score:
+            is_enable_to_update = valid_score > best_score if cfg.train_is_maximize else valid_score < best_score
+            if is_enable_to_update:
                 best_oof = valid_oof
                 best_score = valid_score
+
             metric_map = {
                 "epoch": epoch,
                 "train/loss": train_loss_avg,

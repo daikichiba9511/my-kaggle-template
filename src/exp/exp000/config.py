@@ -48,6 +48,7 @@ class Config(pydantic.BaseModel):
         "num_cycles": 0.5,
         "last_epoch": -1,
     }
+    train_is_maximize: bool = False
 
     # -- Valid
     valid_batch_size: int = 32

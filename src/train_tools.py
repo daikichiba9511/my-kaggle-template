@@ -164,9 +164,6 @@ class MetricsMonitor:
         self._metrics_df = pl.DataFrame()
 
     def update(self, metrics: dict[str, float | int]) -> None:
-        if "epoch" in metrics:
-            raise ValueError("epoch is reserved word. Please use another key name")
-
         _metrics = pl.from_dict({k: [v] for k, v in metrics.items()})
         if self._metrics_df.is_empty():
             self._metrics_df = _metrics
@@ -177,12 +174,13 @@ class MetricsMonitor:
             wandb.log(metrics)
         logger.info(f"Metrics updated: {pprint.pformat(metrics)}")
 
-    def show(self, log_interval: int = 1) -> None:
+    def show(self, use_logger: bool = False, log_interval: int = 1) -> None:
         """print metrics to logger"""
         logging_metrics = self._metrics_df.filter(
             pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval)))
         )
-        logger.info(f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}")
+        msg = f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}"
+        logger.info(msg) if use_logger else print(msg)
 
     def plot(
         self,
@@ -190,7 +188,7 @@ class MetricsMonitor:
         col: str | Sequence[str],
         figsize: tuple[int, int] = (14, 12),
     ) -> None:
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
         assert isinstance(ax, axes.Axes)
         assert isinstance(fig, figure.Figure)
         if isinstance(col, str):
