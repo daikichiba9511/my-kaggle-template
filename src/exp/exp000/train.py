@@ -3,10 +3,12 @@ import multiprocessing as mp
 import pathlib
 from typing import Any, Callable
 
+import numpy as np
 import polars as pl
 import timm.utils as timm_utils
 import torch
 import torch.nn as nn
+from torch.nn.init import orthogonal_
 import torch.utils.data as torch_data
 import wandb
 from torch.amp import autocast_mode, grad_scaler
@@ -248,6 +250,7 @@ def main() -> None:
     # =============================================================================
     # TrainLoop
     # =============================================================================
+    score_folds, oof_folds = [], []
     for fold in range(cfg.n_folds):
         logger.info(f"Start fold: {fold}")
         utils.seed_everything(cfg.seed + fold)
@@ -278,7 +281,7 @@ def main() -> None:
             scheduler_params = cfg.train_scheduler_params
         scheduler = optim.get_scheduler(cfg.train_scheduler_name, scheduler_params, optimizer=optimizer)
         criterion = get_loss_fn(cfg.train_loss_name, cfg.train_loss_params)
-        metrics = train_tools.MetricsMonitor(metrics=["epoch", "train/loss", "lr", "valid/loss", "valid/score"])
+        metric_monitor = train_tools.MetricsMonitor(metrics=["epoch", "train/loss", "lr", "valid/loss", "valid/score"])
         best_score, best_oof = 0.0 if cfg.train_is_maximize else float("inf"), pl.DataFrame()
         for epoch in range(cfg.train_n_epochs):
             train_loss_avg, lr = train_one_epoch(
@@ -295,7 +298,10 @@ def main() -> None:
             valid_loss_avg, valid_score, valid_oof = valid_one_epoch(
                 model=ema_model.module, loader=valid_loader, criterion=criterion, device=cfg.device
             )
-            is_enable_to_update = valid_score > best_score if cfg.train_is_maximize else valid_score < best_score
+            is_enable_to_update = (
+                (cfg.save_last_oof and epoch == cfg.train_n_epochs - 1)  # Save last oof
+                or (valid_score > best_score if cfg.train_is_maximize else valid_score < best_score)  # Save best oof
+            )
             if is_enable_to_update:
                 best_oof = valid_oof
                 best_score = valid_score
@@ -307,15 +313,18 @@ def main() -> None:
                 "valid/loss": valid_loss_avg,
                 "valid/score": valid_score,
             }
-            metrics.update(metric_map)
+            metric_monitor.update(metric_map)
             if epoch % cfg.train_log_interval == 0:
-                metrics.show()
+                metric_monitor.show(use_logger=epoch == cfg.train_n_epochs - 1)
             if run:
                 wandb.log(metric_map)
 
         # -- Save Results
+        score_folds.append(best_score)
+        oof_folds.append(best_oof)
+
         best_oof.write_csv(cfg.output_dir / f"oof_{fold}.csv")
-        metrics.save(cfg.output_dir / f"metrics_{fold}.csv", fold=fold)
+        metric_monitor.save(cfg.output_dir / f"metrics_{fold}.csv", fold=fold)
         model_state = train_tools.get_model_state_dict(ema_model.module)
         save_fp_model = cfg.output_dir / f"last_model_{fold}.pth"
         torch.save(model_state, save_fp_model)
@@ -326,7 +335,21 @@ def main() -> None:
 
         if cfg.is_debug:
             break
-    logger.info("End of Training")
+
+    oof = pl.concat(oof_folds)
+    score_all = metrics.score(y_true=oof["y"].to_numpy(), y_pred=oof["y_pred"].to_numpy())
+
+    logger.info(f"""\n
+
+    ===============================================================
+    End of Training.
+
+    Scores: {score_folds}, Mean: {np.mean(score_folds)} +/- {np.std(score_folds)}
+
+    All Score: {score_all}
+    ===============================================================
+
+    \n""")
 
 
 if __name__ == "__main__":

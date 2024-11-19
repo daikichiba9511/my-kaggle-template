@@ -52,6 +52,7 @@ class Config(pydantic.BaseModel):
 
     # -- Valid
     valid_batch_size: int = 32
+    save_last_oof: bool = True
 
     # -- Data
     n_folds: int = 5
