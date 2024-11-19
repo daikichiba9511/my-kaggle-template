@@ -8,7 +8,6 @@ import polars as pl
 import timm.utils as timm_utils
 import torch
 import torch.nn as nn
-from torch.nn.init import orthogonal_
 import torch.utils.data as torch_data
 import wandb
 from torch.amp import autocast_mode, grad_scaler
@@ -281,7 +280,12 @@ def main() -> None:
             model, ema_model = models.compile_models(model, ema_model)
         model, ema_model = model.to(cfg.device), ema_model.to(cfg.device)
         train_loader, valid_loader = init_dataloader(
-            cfg.train_data_fp, cfg.train_batch_size, cfg.valid_batch_size, cfg.num_workers, fold
+            df_fp=cfg.train_data_fp,
+            train_batch_size=cfg.train_batch_size,
+            valid_batch_size=cfg.valid_batch_size,
+            num_workers=cfg.num_workers,
+            fold=fold,
+            debug=cfg.is_debug,
         )
         optimizer = optim.get_optimizer(cfg.train_optimizer_name, cfg.train_optimizer_params, model=model)
         if cfg.train_scheduler_params.get("num_training_steps") == -1:
