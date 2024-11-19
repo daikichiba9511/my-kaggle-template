@@ -45,6 +45,96 @@ def get_loss_fn(loss_name: str, loss_params: dict[str, Any]) -> LossFn:
     raise ValueError(f"Unknown loss name: {loss_name}")
 
 
+# =============================================================================
+# Dataset
+# =============================================================================
+TrainBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
+ValidBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
+
+
+class MyTrainDataset(torch_data.Dataset[TrainBatch]):
+    def __init__(self, df: pl.DataFrame) -> None:
+        super().__init__()
+        self.df = df
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> TrainBatch:
+        raise NotImplementedError
+
+
+class MyValidDataset(torch_data.Dataset[ValidBatch]):
+    def __init__(self, df: pl.DataFrame) -> None:
+        super().__init__()
+        self.df = df
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> ValidBatch:
+        raise NotImplementedError
+
+
+def init_dataloader(
+    df_fp: pathlib.Path,
+    train_batch_size: int,
+    valid_batch_size: int,
+    num_workers: int = 16,
+    fold: int = 0,
+    debug: bool = False,
+) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
+    if mp.cpu_count() < num_workers:
+        num_workers = mp.cpu_count()
+
+    if df_fp.suffix == ".csv":
+        df = pl.read_csv(df_fp)
+    elif df_fp.suffix == ".parquet":
+        df = pl.read_parquet(df_fp)
+    else:
+        raise ValueError(f"Unknown file type: {df_fp}")
+
+    df_train = df.filter(pl.col("fold") != fold)
+    df_valid = df.filter(pl.col("fold") == fold)
+    assert len(df_train) > 0, f"df_train is empty: {df_fp=}, {fold=}"
+    assert len(df_valid) > 0, f"df_valid is empty: {df_fp=}, {fold=}"
+    if debug:
+        df_train = df_train.head(100)
+        df_valid = df_valid.head(100)
+
+    train_ds: torch_data.Dataset[TrainBatch] = MyTrainDataset(df_train)
+    valid_ds: torch_data.Dataset[ValidBatch] = MyValidDataset(df_valid)
+
+    train_dl = torch_data.DataLoader(
+        dataset=train_ds,
+        batch_size=train_batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        drop_last=True,
+        pin_memory=True,
+        prefetch_factor=2 if num_workers > 0 else None,
+        worker_init_fn=lambda _: utils.seed_everything(42),
+        persistent_workers=True if num_workers > 0 else False,
+    )
+
+    valid_loader = torch_data.DataLoader(
+        dataset=valid_ds,
+        batch_size=valid_batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        drop_last=False,
+        pin_memory=True if num_workers > 0 else False,
+        prefetch_factor=2 if num_workers > 0 else None,
+        worker_init_fn=lambda _: utils.seed_everything(42),
+        persistent_workers=True if num_workers > 0 else False,
+    )
+
+    return train_dl, valid_loader
+
+
+# =============================================================================
+# TrainFn
+# =============================================================================
 def train_one_epoch(
     epoch: int,
     model: nn.Module,
@@ -52,9 +142,9 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     scheduler: optim.Schedulers,
     criterion: LossFn,
-    loader: torch_data.DataLoader,
+    loader: torch_data.DataLoader[TrainBatch],
     device: torch.device,
-    use_amp: bool,
+    use_amp: bool = True,
     scaler: grad_scaler.GradScaler | None = None,
     max_norm: float = 1000.0,
 ) -> tuple[float, float]:
@@ -108,9 +198,12 @@ def train_one_epoch(
     return loss_meter.avg, lr
 
 
+# =============================================================================
+# ValidFn
+# =============================================================================
 def valid_one_epoch(
     model: nn.Module,
-    loader: torch_data.DataLoader,
+    loader: torch_data.DataLoader[ValidBatch],
     criterion: LossFn,
     device: torch.device,
 ) -> tuple[float, float, pl.DataFrame]:
@@ -123,8 +216,8 @@ def valid_one_epoch(
 
     Returns: tuple
         loss: float
-        score: float
-        oof_df: pl.DataFrame
+        valid_score: float
+        oof: pl.DataFrame
     """
     model = model.eval()
     pbar = tqdm(enumerate(loader), total=len(loader), desc="Valid", dynamic_ncols=True)
@@ -153,88 +246,6 @@ def valid_one_epoch(
     oof = pl.concat(oofs)
     valid_score = metrics.score(y_true=oof["y"].to_numpy(), y_pred=oof["y_pred"].to_numpy())
     return loss_meter.avg, valid_score, oof
-
-
-# =============================================================================
-# Dataset
-# =============================================================================
-TrainBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
-ValidBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
-
-
-class MyTrainDataset(torch_data.Dataset[TrainBatch]):
-    def __init__(self, df: pl.DataFrame) -> None:
-        super().__init__()
-        self.df = df
-
-    def __len__(self) -> int:
-        return len(self.df)
-
-    def __getitem__(self, idx: int) -> TrainBatch:
-        raise NotImplementedError
-
-
-class MyValidDataset(torch_data.Dataset[ValidBatch]):
-    def __init__(self, df: pl.DataFrame) -> None:
-        super().__init__()
-        self.df = df
-
-    def __len__(self) -> int:
-        return len(self.df)
-
-    def __getitem__(self, idx: int) -> ValidBatch:
-        raise NotImplementedError
-
-
-def init_dataloader(
-    df_fp: pathlib.Path,
-    train_batch_size: int,
-    valid_batch_size: int,
-    num_workers: int = 16,
-    fold: int = 0,
-    debug: bool = False,
-) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
-    if mp.cpu_count() < num_workers:
-        num_workers = mp.cpu_count()
-
-    df = pl.read_csv(df_fp)
-
-    df_train = df.filter(pl.col("fold") != fold)
-    df_valid = df.filter(pl.col("fold") == fold)
-    assert len(df_train) > 0, f"df_train is empty: {df_fp=}, {fold=}"
-    assert len(df_valid) > 0, f"df_valid is empty: {df_fp=}, {fold=}"
-    if debug:
-        df_train = df_train.head(100)
-        df_valid = df_valid.head(100)
-
-    train_ds: torch_data.Dataset[TrainBatch] = MyTrainDataset(df_train)
-    valid_ds: torch_data.Dataset[ValidBatch] = MyValidDataset(df_valid)
-
-    train_dl = torch_data.DataLoader(
-        dataset=train_ds,
-        batch_size=train_batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        drop_last=True,
-        pin_memory=True,
-        prefetch_factor=2 if num_workers > 0 else None,
-        worker_init_fn=lambda _: utils.seed_everything(42),
-        persistent_workers=True if num_workers > 0 else False,
-    )
-
-    valid_loader = torch_data.DataLoader(
-        dataset=valid_ds,
-        batch_size=valid_batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        drop_last=False,
-        pin_memory=True if num_workers > 0 else False,
-        prefetch_factor=2 if num_workers > 0 else None,
-        worker_init_fn=lambda _: utils.seed_everything(42),
-        persistent_workers=True if num_workers > 0 else False,
-    )
-
-    return train_dl, valid_loader
 
 
 def main() -> None:
@@ -294,6 +305,7 @@ def main() -> None:
                 criterion=criterion,
                 device=cfg.device,
                 use_amp=cfg.train_use_amp,
+                max_norm=cfg.train_max_norm,
             )
             valid_loss_avg, valid_score, valid_oof = valid_one_epoch(
                 model=ema_model.module, loader=valid_loader, criterion=criterion, device=cfg.device
