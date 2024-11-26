@@ -167,7 +167,7 @@ def train_one_epoch(
         loss = criterion(y_pred, y)
 
         # --- Update
-        train_tools.step(
+        grad_norm = train_tools.step(
             model=model,
             optimizer=optimizer,
             loss=loss,

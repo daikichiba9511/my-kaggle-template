@@ -1,11 +1,15 @@
 import pathlib
-from typing import Any, Final, Iterable, Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import seaborn as sns
-from matplotlib import axes
+import torch
+from matplotlib import axes, cm, figure
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from sklearn.metrics import confusion_matrix
+from sklearn.utils.multiclass import unique_labels
 
 from src import utils
 
@@ -193,3 +197,120 @@ def scatter(
         fig.show()
     if save_fp is not None and fig is not None:
         fig.savefig(save_fp)
+
+
+def plot_images(
+    images: torch.Tensor | npt.NDArray,
+    title: str,
+    save_path: pathlib.Path | None = None,
+    figsize: tuple[int, int] = (30, 15),
+) -> None:
+    """
+    Args:
+        images: list of images to plot. (n, h, w, c) or (n, c, h, w)
+    """
+    if isinstance(images, torch.Tensor) and images.shape[-1] != 3:
+        images = images.permute(0, 2, 3, 1).cpu().numpy()
+    elif isinstance(images, np.ndarray) and images.shape[-1] != 3:
+        images = np.transpose(images, (0, 2, 3, 1))
+
+    n_rows = len(images)
+    if n_rows > 5:
+        raise ValueError("Too many images to plot")
+
+    fig, ax = plt.subplots(1, n_rows, figsize=figsize)
+    for i, img in enumerate(images):
+        ax[i].imshow(img, label=f"image_{i}")
+        ax[i].set_title(f"image_{i}", fontsize="small")
+
+    # -- draw object overlay here
+
+    # -- draw title & plot/save
+    fig.suptitle(title, fontsize="small")
+    fig.tight_layout()
+    if save_path is None:
+        plt.show()
+    else:
+        fig.savefig(str(save_path))
+        plt.close("all")
+
+
+def plot_confusion_matrix(
+    y_true: npt.NDArray,
+    y_pred: npt.NDArray,
+    classes: npt.NDArray,
+    normalize: bool = False,
+    title: str | None = None,
+    cmap: cm.Blues = cm.Blues,  # type: ignore
+) -> tuple[figure.Figure, axes.Axes]:
+    """
+    Refer to: https://scikit-learn.org/stable/auto_examples/model_selection/plot_confusion_matrix.html
+
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if not title:
+        if normalize:
+            title = "Normalized confusion matrix"
+        else:
+            title = "Confusion matrix, w/o normalization"
+
+    # Compute confusion matrix
+    cm = confusion_matrix(y_true, y_pred)
+    # Only use the labels that appear in the data
+    classes = classes[unique_labels(y_true, y_pred)]
+    if normalize:
+        cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print("Confusion matrix, without normalization")
+
+    print(cm)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    assert isinstance(ax, axes.Axes)
+    im = ax.imshow(cm, interpolation="nearest", cmap=cmap)
+    tick_marks = np.arange(len(classes))
+    ax.set_xticks(tick_marks, fontsize=25)
+    ax.set_yticks(tick_marks, fontsize=25)
+    ax.set_xlabel("Predicted label", fontsize=25)
+    ax.set_ylabel("True label", fontsize=25)
+    ax.set_title(title, fontsize=30)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.15)
+    _figure = ax.figure
+    assert isinstance(_figure, figure.Figure)
+    cbar = _figure.colorbar(im, ax=ax, cax=cax)
+    cbar.ax.tick_params(labelsize=20)
+
+    # We want to show all ticks...
+    ax.set(
+        xticks=np.arange(cm.shape[1]),
+        yticks=np.arange(cm.shape[0]),
+        # ... and label them with the respective list entries
+        xticklabels=classes,
+        yticklabels=classes,
+        ylabel="True label",
+        xlabel="Predicted label",
+    )
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), ha="right", rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = ".2f" if normalize else "d"
+    thresh = cm.max() / 2.0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(
+                j,
+                i,
+                format(cm[i, j], fmt),
+                fontsize=20,
+                ha="center",
+                va="center",
+                color="white" if cm[i, j] > thresh else "black",
+            )
+    fig.tight_layout()
+    return fig, ax

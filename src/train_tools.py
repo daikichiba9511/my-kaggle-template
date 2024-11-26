@@ -221,6 +221,8 @@ def step(
     scaler: grad_scaler.GradScaler | None = None,
     ema_model: nn.Module | None = None,
     scheduler: optim.Schedulers | None = None,
+    skip_nan: bool = False,
+    raise_nan: bool = False,
 ) -> torch.Tensor:
     """Step for training
 
@@ -236,6 +238,13 @@ def step(
     Returns:
         torch.Tensor: grad_norm
     """
+    has_nan = torch.isnan(loss).any()
+    if has_nan and skip_nan:
+        logger.info("Skip nan loss")
+        return torch.tensor(0.0)
+    if has_nan and raise_nan:
+        raise ValueError("Loss has nan value")
+
     if scaler is not None:
         scaled_loss = scaler.scale(loss)
         scaled_loss.backward()
