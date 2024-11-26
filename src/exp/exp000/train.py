@@ -166,19 +166,16 @@ def train_one_epoch(
         y_pred = output
         loss = criterion(y_pred, y)
 
-        optimizer.zero_grad()
-        if scaler is not None:
-            scaled_loss = scaler.scale(loss)
-            scaled_loss.backward()
-            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm)
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            loss.backward()
-            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm)
-            optimizer.step()
-        scheduler.step()
-        ema_model.update(model)
+        # --- Update
+        train_tools.step(
+            model=model,
+            optimizer=optimizer,
+            loss=loss,
+            max_norm=max_norm,
+            scaler=scaler,
+            ema_model=ema_model,
+            scheduler=scheduler,
+        )
 
         loss_meter.update(loss.detach().cpu().item())
         pbar.set_postfix_str(f"Loss:{loss_meter.avg:.4f},Epoch:{epoch},Norm:{grad_norm:.2f}")

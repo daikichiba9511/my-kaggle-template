@@ -13,6 +13,8 @@ from matplotlib import axes, figure
 from matplotlib import pyplot as plt
 from torch.amp import grad_scaler
 
+from src import optim
+
 logger = logging.getLogger(__name__)
 
 
@@ -218,7 +220,7 @@ def step(
     max_norm: float,
     scaler: grad_scaler.GradScaler | None = None,
     ema_model: nn.Module | None = None,
-    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
+    scheduler: optim.Schedulers | None = None,
 ) -> torch.Tensor:
     """Step for training
 
