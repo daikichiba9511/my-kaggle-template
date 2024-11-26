@@ -11,6 +11,7 @@ import torch.nn as nn
 import wandb
 from matplotlib import axes, figure
 from matplotlib import pyplot as plt
+from torch.amp import grad_scaler
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ class MetricsMonitor:
         logging_metrics = self._metrics_df.filter(
             pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval)))
         )
-        msg = f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}"
+        msg = f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}\n"
         logger.info(msg) if use_logger else print(msg)
 
     def plot(
@@ -208,6 +209,48 @@ class MetricsMonitor:
         self._metrics_df = self._metrics_df.with_columns(fold=pl.lit(fold))
         self._metrics_df.write_csv(save_path)
         logger.info(f"Saved metrics to {save_path}")
+
+
+def step(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    loss: torch.Tensor,
+    max_norm: float,
+    scaler: grad_scaler.GradScaler | None = None,
+    ema_model: nn.Module | None = None,
+    scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
+) -> torch.Tensor:
+    """Step for training
+
+    Args:
+        model (nn.Module): model
+        optimizer (torch.optim.Optimizer): optimizer
+        loss (torch.Tensor): loss
+        scaler (grad_scaler.GradScaler): scaler
+        max_norm (float): max_norm
+        ema_model (nn.Module | None): ema_model
+        scheduler (torch.optim.lr_scheduler._LRScheduler | None): scheduler
+
+    Returns:
+        torch.Tensor: grad_norm
+    """
+    if scaler is not None:
+        scaled_loss = scaler.scale(loss)
+        scaled_loss.backward()
+        grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        loss.backward()
+        grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+        optimizer.step()
+
+    if scheduler is not None:
+        scheduler.step()
+    if ema_model is not None:
+        ema_model.update(model)
+
+    return grad_norm
 
 
 def make_oof(

@@ -1,7 +1,6 @@
 import argparse
 import multiprocessing as mp
 import pathlib
-from typing import Any, Callable
 
 import numpy as np
 import polars as pl
@@ -15,11 +14,14 @@ from tqdm.auto import tqdm
 from typing_extensions import TypeAlias
 
 from src import constants, log, metrics, optim, train_tools, utils
+from src import loss as my_loss
 
 from . import config, models
 
 logger = log.get_root_logger()
 EXP_NO = __file__.split("/")[-2]
+COMMIT_HASH = utils.get_commit_hash_head()
+CALLED_TIME = log.get_called_time()
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,21 +29,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--compile", action="store_true")
     return parser.parse_args()
-
-
-LossFn: TypeAlias = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
-
-
-def get_loss_fn(loss_name: str, loss_params: dict[str, Any]) -> LossFn:
-    if loss_name == "BCEWithLogitsLoss":
-        return nn.BCEWithLogitsLoss(**loss_params)
-    if loss_name == "CrossEntropyLoss":
-        return nn.CrossEntropyLoss(**loss_params)
-    if loss_name == "MSELoss":
-        return nn.MSELoss(**loss_params)
-    if loss_name == "L1Loss":
-        return nn.L1Loss(**loss_params)
-    raise ValueError(f"Unknown loss name: {loss_name}")
 
 
 # =============================================================================
@@ -54,7 +41,7 @@ ValidBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
 class MyTrainDataset(torch_data.Dataset[TrainBatch]):
     def __init__(self, df: pl.DataFrame) -> None:
         super().__init__()
-        self.df = df
+        self.df = df.to_pandas()
 
     def __len__(self) -> int:
         return len(self.df)
@@ -66,7 +53,7 @@ class MyTrainDataset(torch_data.Dataset[TrainBatch]):
 class MyValidDataset(torch_data.Dataset[ValidBatch]):
     def __init__(self, df: pl.DataFrame) -> None:
         super().__init__()
-        self.df = df
+        self.df = df.to_pandas()
 
     def __len__(self) -> int:
         return len(self.df)
@@ -100,10 +87,12 @@ def init_dataloader(
     if debug:
         df_train = df_train.head(100)
         df_valid = df_valid.head(100)
+    # --- Preprocess
 
+    # --- Construct Datasets
     train_ds: torch_data.Dataset[TrainBatch] = MyTrainDataset(df_train)
     valid_ds: torch_data.Dataset[ValidBatch] = MyValidDataset(df_valid)
-
+    # --- Construct DataLoaders
     train_dl = torch_data.DataLoader(
         dataset=train_ds,
         batch_size=train_batch_size,
@@ -140,7 +129,7 @@ def train_one_epoch(
     ema_model: timm_utils.ModelEmaV3,
     optimizer: torch.optim.Optimizer,
     scheduler: optim.Schedulers,
-    criterion: LossFn,
+    criterion: my_loss.LossFn,
     loader: torch_data.DataLoader[TrainBatch],
     device: torch.device,
     use_amp: bool = True,
@@ -203,7 +192,7 @@ def train_one_epoch(
 def valid_one_epoch(
     model: nn.Module,
     loader: torch_data.DataLoader[ValidBatch],
-    criterion: LossFn,
+    criterion: my_loss.LossFn,
     device: torch.device,
 ) -> tuple[float, float, pl.DataFrame]:
     """
@@ -295,7 +284,7 @@ def main() -> None:
         else:
             scheduler_params = cfg.train_scheduler_params
         scheduler = optim.get_scheduler(cfg.train_scheduler_name, scheduler_params, optimizer=optimizer)
-        criterion = get_loss_fn(cfg.train_loss_name, cfg.train_loss_params)
+        criterion = my_loss.get_loss_fn(cfg.train_loss_name, cfg.train_loss_params)
         metric_monitor = train_tools.MetricsMonitor(metrics=["epoch", "train/loss", "lr", "valid/loss", "valid/score"])
         best_score, best_oof = 0.0 if cfg.train_is_maximize else float("inf"), pl.DataFrame()
         for epoch in range(cfg.train_n_epochs):
@@ -357,13 +346,15 @@ def main() -> None:
 
     logger.info(f"""\n
 
-    ===============================================================
-    End of Training.
+===============================================================
+End of Training. NAME: {cfg.name},
+DESC: {cfg.description}
 
-    Scores: {score_folds}, Mean: {np.mean(score_folds)} +/- {np.std(score_folds)}
+Scores: {score_folds}, Mean: {np.mean(score_folds)} +/- {np.std(score_folds)}
+Score Whold Fold: {score_all}
 
-    All Score: {score_all}
-    ===============================================================
+{CALLED_TIME=}, DURATION={log.calc_duration_from(CALLED_TIME)}, {COMMIT_HASH=}
+===============================================================
 
     \n""")
 

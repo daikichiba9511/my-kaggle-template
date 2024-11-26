@@ -49,3 +49,20 @@ def get_called_time() -> str:
     """
     now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)
     return now.strftime("%Y%m%d-%H:%M:%S")
+
+
+def calc_duration_from(strftme: str) -> str:
+    """calculate duration from strftme
+
+    Args:
+        strftme (str): start time
+
+    Returns:
+        str: duration
+    """
+    start = datetime.datetime.strptime(strftme, "%Y%m%d-%H:%M:%S")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    duration = now.timestamp() - start.timestamp()
+    duration_sec = int(duration)
+    duration_min = duration_sec // 60
+    return f"{duration_min} [min], {duration_sec} [sec]"

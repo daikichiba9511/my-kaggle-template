@@ -3,7 +3,7 @@ import pathlib
 import pydantic
 import torch
 
-from src import constants
+from src import constants, optim
 
 EXP_NO = __file__.split("/")[-2]
 DESCRIPTION = """
@@ -41,7 +41,7 @@ class Config(pydantic.BaseModel):
     train_loss_params: dict[str, str] = {"reduction": "mean"}
     train_optimizer_name: str = "AdamW"
     train_optimizer_params: dict[str, float] = {"lr": 1e-3, "weight_decay": 1e-2, "eps": 1e-8, "fused": True}
-    train_scheduler_name: str = "CosineLRScheduler"
+    train_scheduler_name: optim.SchedulersLiteral = "CosineLRScheduler"
     train_scheduler_params: dict[str, float] = {
         "num_warmup_steps": 1,
         "num_training_steps": 10,

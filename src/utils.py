@@ -1,13 +1,15 @@
 import contextlib
 import math
+import multiprocessing as mp
 import os
 import pathlib
 import pprint
 import random
 import subprocess
 import time
+from collections.abc import Callable
 from logging import getLogger
-from typing import Any, Generator
+from typing import Any, Generator, Sequence, TypeVar
 
 import joblib
 import matplotlib.pyplot as plt
@@ -293,3 +295,84 @@ def save_importances(importances: pl.DataFrame, save_fp: pathlib.Path, figsize: 
     plt.tight_layout()
     plt.savefig(save_fp)
     plt.close("all")
+
+
+def to_heatmap(*, x: npt.NDArray[np.integer], y: npt.NDArray[np.integer]) -> npt.NDArray[np.int32]:
+    """make heatmap array from x and y
+
+    Args:
+        x: array of x-axis.
+        y: array of y-axis.
+
+    Returns:
+        heatmap: array of heatmap.
+    """
+    x_unique = np.unique(x)
+    y_unique = np.unique(y)
+    n_class_x = len(x_unique)
+    n_class_y = len(y_unique)
+    heatmap = np.zeros((n_class_x, n_class_y), dtype=np.int32)
+    for i, class_x in enumerate(x_unique):
+        for j, class_y in enumerate(y_unique):
+            heatmap[i, j] = np.sum((x == class_x) & (y == class_y))
+    return heatmap
+
+
+def run_cmd(cmd: Sequence[str]) -> None:
+    cmd_str = " ".join(cmd)
+    print(f"Run command: {cmd_str}")
+    subprocess.run(cmd, check=True)
+
+
+_T = TypeVar("_T")
+_S = TypeVar("_S")
+
+
+def call_mp_unordered(
+    fn: Callable[[_S], _T],
+    containers: Sequence[_S] | npt.NDArray,
+    with_progress: bool = False,
+    desc: str | None = None,
+    n_jobs: int = -1,
+) -> list[_T]:
+    if desc is None:
+        desc = "call func in multiprocessing"
+    if n_jobs == -1:
+        n_jobs = mp.cpu_count()
+
+    with mp.get_context("spawn").Pool(processes=n_jobs) as pool:
+        if with_progress:
+            return list(
+                tqdm(
+                    pool.imap_unordered(fn, containers),
+                    total=len(containers),
+                    desc=desc,
+                    dynamic_ncols=True,
+                )
+            )
+        return list(pool.imap_unordered(fn, containers))
+
+
+def call_mp_ordered(
+    fn: Callable[[_S], _T],
+    containers: Sequence[_S] | npt.NDArray,
+    with_progress: bool = False,
+    desc: str | None = None,
+    n_jobs: int = -1,
+) -> list[_T]:
+    if desc is None:
+        desc = "call func in multiprocessing"
+    if n_jobs == -1:
+        n_jobs = mp.cpu_count()
+
+    with mp.get_context("spawn").Pool(processes=n_jobs) as pool:
+        if with_progress:
+            return list(
+                tqdm(
+                    pool.map(fn, containers),
+                    total=len(containers),
+                    desc=desc,
+                    dynamic_ncols=True,
+                )
+            )
+        return list(pool.map(fn, containers))

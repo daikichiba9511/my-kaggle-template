@@ -69,6 +69,9 @@ def setup_scheduler_params(
     return _scheduler_params
 
 
+SchedulersLiteral: TypeAlias = Literal["CosineLRScheduler", "CosineAnnealingWarmRestarts"]
+
+
 @overload
 def get_scheduler(
     scheduler_name: Literal["CosineLRScheduler"], scheduler_params: dict[str, Any], optimizer: torch.optim.Optimizer
@@ -84,7 +87,7 @@ def get_scheduler(
 
 
 def get_scheduler(
-    scheduler_name: Literal["CosineLRScheduler", "CosineAnnealingWarmRestarts"],
+    scheduler_name: SchedulersLiteral,
     scheduler_params: dict[str, Any],
     optimizer: torch.optim.Optimizer,
 ) -> Schedulers:
