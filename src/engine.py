@@ -182,7 +182,7 @@ class MetricsMonitor:
         logging_metrics = self._metrics_df.filter(
             pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval)))
         )
-        msg = f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}\n"
+        msg = f"\n{logging_metrics.to_pandas().to_markdown()}\n"
         logger.info(msg) if use_logger else print(msg)
 
     def plot(
