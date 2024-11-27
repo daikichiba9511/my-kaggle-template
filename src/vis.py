@@ -1,5 +1,5 @@
 import pathlib
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, Sequence, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -162,6 +162,51 @@ def heatmap(
     fig.show()
     if save_fp is not None:
         fig.savefig(save_fp)
+
+
+def plot_matrix(
+    matrix: npt.NDArray,
+    x_ticks_labels: Sequence[str],
+    y_ticks_labels: Sequence[str],
+    label_x: str,
+    label_y: str,
+    title: str,
+    save_fp: pathlib.Path | None = None,
+    ax: axes.Axes | None = None,
+) -> None:
+    """plot matrix
+
+    Args:
+        matrix: matrix
+        label_x: x-axis label
+        label_y: y-axis label
+        title: title
+        save_fp: save file path
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(15, 10))
+    else:
+        fig = None
+    fmt = ".2f" if matrix.dtype in [np.float32, np.float64] else "d"
+    sns.heatmap(
+        matrix,
+        annot=True,
+        ax=ax,
+        cmap="Blues",
+        fmt=fmt,
+        xticklabels=x_ticks_labels,
+        yticklabels=y_ticks_labels,
+        square=True,
+    )
+    if ax is not None:
+        ax.set_xlabel(label_x, fontsize="large")
+        ax.set_ylabel(label_y, fontsize="large")
+        ax.set_title(title, fontsize="large")
+    if fig is not None:
+        fig.tight_layout()
+        fig.show()
+        if save_fp is not None:
+            fig.savefig(save_fp)
 
 
 def scatter(

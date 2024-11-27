@@ -257,3 +257,79 @@ def call_mp_ordered(
                 )
             )
         return list(pool.map(fn, containers))
+
+
+def calc_quantiles(x: npt.NDArray, n_splits: int) -> list[float]:
+    return np.linspace(0, 1, n_splits + 1).tolist()
+
+
+def _make_quantile_axis(x: npt.NDArray, quantiles: Sequence[float]) -> list[str]:
+    axis_labels: list[str] = []
+    for i in range(len(quantiles) - 1):
+        start = x[i].item()
+        if isinstance(start, float):
+            start = round(start, 3)
+        end = x[i + 1]
+        if isinstance(end, float):
+            end = round(end, 3)
+        axis_labels.append(f"{start}-{end}")
+    return axis_labels
+
+
+def quantile_pivot_table(
+    x: npt.NDArray, y: npt.NDArray, row_quantiles: Sequence[float], col_quantiles: Sequence[float]
+) -> pl.DataFrame:
+    """
+    Create a pivot table based on n-th quantiles for rows and m-th quantiles for columns,
+    using counts as the aggregation.
+    """
+    row_bins = np.quantile(x, row_quantiles).astype(x.dtype)
+    col_bins = np.quantile(y, col_quantiles).astype(y.dtype)
+    row_bin_indices = np.digitize(x, row_bins, right=True) - 1
+    col_bin_indices = np.digitize(y, col_bins, right=True) - 1
+
+    bins = np.vstack([row_bin_indices, col_bin_indices]).T
+    unique_bins, counts = np.unique(bins, axis=0, return_counts=True)
+    pivot_table = np.zeros((len(row_quantiles) - 1, len(col_quantiles) - 1), dtype=np.int32)
+    for (row_bin, col_bin), count in zip(unique_bins, counts):
+        if 0 <= row_bin < pivot_table.shape[0] and 0 <= col_bin < pivot_table.shape[1]:
+            pivot_table[row_bin, col_bin] = count
+
+    cols = _make_quantile_axis(col_bins, col_quantiles)
+    rows = _make_quantile_axis(row_bins, row_quantiles)
+    df = pl.DataFrame(pivot_table, schema=cols)
+    df = df.with_columns(pl.Series("row_bin/col_bin", rows)).select(["row_bin/col_bin", *cols])
+    return df
+
+
+def _test_quantile_pivot_table() -> None:
+    from src import vis
+
+    np.random.seed(42)
+    x = np.random.randint(0, 100, 100)
+    y = np.random.randint(0, 100, 100)
+    # y = x**2 - 2 * x + 1 - np.random.randint(0, 100, 100)
+    print(np.min(x), np.max(x))
+    print(np.min(y), np.max(y))
+    n_splits_row, n_splits_col = (5, 5)
+    row_quantiles = calc_quantiles(x, n_splits_row)
+    col_quantiles = calc_quantiles(y, n_splits_col)
+    df = quantile_pivot_table(x, y, row_quantiles, col_quantiles)
+    print(df)
+    vis.plot_matrix(
+        df.drop("row_bin/col_bin").to_numpy(),
+        x_ticks_labels=df["row_bin/col_bin"].to_numpy().tolist(),
+        y_ticks_labels=df.drop("row_bin/col_bin").columns,
+        label_x="x",
+        label_y="y",
+        title="Quantile pivot table",
+        save_fp=pathlib.Path("output/utils-test.png"),
+    )
+
+
+def _test_utils() -> None:
+    _test_quantile_pivot_table()
+
+
+if __name__ == "__main__":
+    _test_utils()
