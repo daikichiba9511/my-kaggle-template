@@ -248,6 +248,7 @@ def step(
     if scaler is not None:
         scaled_loss = scaler.scale(loss)
         scaled_loss.backward()
+        scaler.unscale_(optimizer)
         grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
         scaler.step(optimizer)
         scaler.update()
