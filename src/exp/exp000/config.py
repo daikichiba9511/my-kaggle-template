@@ -1,4 +1,5 @@
 import pathlib
+from typing import Any
 
 import pydantic
 import torch
@@ -64,3 +65,42 @@ class Config(pydantic.BaseModel):
     # -- Model
     model_name: str = "SimpleNN"
     model_params: dict[str, float] = {}
+
+
+class GBDTConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True, frozen=True)
+    name: str = EXP_NO
+    description: str = """
+    simple baseline
+    """
+    # -- General
+    is_debug: bool = False
+    root_dir: pathlib.Path = constants.ROOT
+    """Root directory. alias to constants.ROOT"""
+    input_dir: pathlib.Path = constants.INPUT_DIR
+    """input directory. alias to constants.INPUT_DIR"""
+    output_dir: pathlib.Path = constants.OUTPUT_DIR / EXP_NO
+    """output directory. constants.OUTPUT_DIR/EXP_NO"""
+    data_dir: pathlib.Path = constants.DATA_DIR
+    """data directory. alias to constants.DATA_DIR"""
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seed: int = 42
+
+    # -- Train
+    train_log_interval: int = 1
+    gbdt_model_params: dict[str, Any] = {
+        "learning_rate": 0.01,
+        "verbosity": 0,
+        "seed": seed,
+        "n_jobs": -1,
+        "max_depth": 7,
+        "num_leaves": int(0.7 * (2**4)),
+    }
+    num_boost_round: int = 3500
+
+    # -- Data
+    n_folds: int = 5
+    train_data_fp: pathlib.Path = constants.DATA_DIR / "train.csv"
+    test_data_fp: pathlib.Path = constants.DATA_DIR / "test.csv"
+
+    col_key: str = "id"

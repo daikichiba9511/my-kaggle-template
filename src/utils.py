@@ -1,4 +1,6 @@
 import contextlib
+import functools
+import json
 import math
 import multiprocessing as mp
 import os
@@ -300,6 +302,35 @@ def quantile_pivot_table(
     df = pl.DataFrame(pivot_table, schema=cols)
     df = df.with_columns(pl.Series("row_bin/col_bin", rows)).select(["row_bin/col_bin", *cols])
     return df
+
+
+_T_pipe = TypeVar("_T_pipe")
+
+
+def pipe(*func: Callable[[_T_pipe], _T_pipe]) -> Callable[[_T_pipe], _T_pipe]:
+    @functools.wraps(pipe)
+    def _inner(x: _T_pipe) -> _T_pipe:
+        for fn in func:
+            x = fn(x)
+        return x
+
+    return _inner
+
+
+def save_as_json(obj: list | dict, save_fp: pathlib.Path, ensure_ascii: bool = False) -> None:
+    with save_fp.open("w") as f:
+        json.dump(obj, f, ensure_ascii=ensure_ascii)
+
+
+def load_json(fp: pathlib.Path) -> object:
+    with fp.open("r") as f:
+        obj = json.load(f)
+    return obj
+
+
+# =============================================================================
+# Test
+# =============================================================================
 
 
 def _test_quantile_pivot_table() -> None:
