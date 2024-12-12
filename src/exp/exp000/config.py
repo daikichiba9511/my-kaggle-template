@@ -50,6 +50,7 @@ class Config(pydantic.BaseModel):
     }
     train_is_maximize: bool = False
     train_max_norm: float = 1000.0
+    train_grad_accum_steps: int = 1
 
     # -- Valid
     valid_batch_size: int = 32

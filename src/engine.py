@@ -289,3 +289,28 @@ def make_oof(
         return pl.concat([x_df, y_df, y_pred_df], how="horizontal")
     id_df = pl.DataFrame(sample_id, ["sample_id"], orient="row")
     return pl.concat([id_df, x_df, y_df, y_pred_df], how="horizontal")
+
+
+class UpdateManager:
+    def __init__(self, is_maximize: bool, n_epochs: int) -> None:
+        self._is_maximize = is_maximize
+        self._n_epochs = n_epochs
+        self._best_score = float("-inf") if self._is_maximize else float("inf")
+
+    def check_score(self, score: float) -> bool:
+        if self._is_maximize:
+            if score > self._best_score:
+                self._best_score = score
+                return True
+        else:
+            if score < self._best_score:
+                self._best_score = score
+                return True
+        return False
+
+    def check_epoch(self, epoch: int) -> bool:
+        return epoch < self._n_epochs
+
+    @property
+    def best_score(self) -> float:
+        return self._best_score
