@@ -214,6 +214,7 @@ class MetricsMonitor:
 
 
 def step(
+    step: int,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     loss: torch.Tensor,
@@ -221,6 +222,7 @@ def step(
     scaler: grad_scaler.GradScaler | None = None,
     ema_model: nn.Module | None = None,
     scheduler: optim.Schedulers | None = None,
+    grad_accum_steps: int = 1,
     skip_nan: bool = False,
     raise_nan: bool = False,
 ) -> torch.Tensor:
@@ -248,14 +250,20 @@ def step(
     if scaler is not None:
         scaled_loss = scaler.scale(loss)
         scaled_loss.backward()
-        scaler.unscale_(optimizer)
-        grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-        scaler.step(optimizer)
-        scaler.update()
+        if step % grad_accum_steps == 0:
+            scaler.unscale_(optimizer)
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            grad_norm = torch.tensor(0.0)
     else:
         loss.backward()
-        grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-        optimizer.step()
+        if step % grad_accum_steps == 0:
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+            optimizer.step()
+        else:
+            grad_norm = torch.tensor(0.0)
 
     if scheduler is not None:
         scheduler.step()
