@@ -197,7 +197,7 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
 
         metric_monitor = engine.MetricsMonitor(metrics=["epoch", "train/loss", "lr", "valid/loss", "valid/score"])
         update_manager = engine.UpdateManager(is_maximize=cfg.train_is_maximize, n_epochs=cfg.train_n_epochs)
-        best_oof = pl.DataFrame()
+        oof_fold = pl.DataFrame()
         for epoch in range(cfg.train_n_epochs):
             train_loss_avg, lr = train_one_epoch(
                 epoch=epoch,
@@ -217,7 +217,7 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
             )
             # --- save last epoch: 基本的にはearly stoppingしない
             if update_manager.check_epoch(epoch):
-                best_oof = valid_oof
+                oof_fold = valid_oof
 
             metric_map = {
                 "epoch": epoch,
@@ -234,9 +234,9 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
 
         # -- Save Results
         score_folds.append(update_manager.best_score)
-        oof_folds.append(best_oof)
+        oof_folds.append(oof_fold)
+        oof_fold.write_parquet(cfg.output_dir / f"oof_{fold}.parquet")
 
-        best_oof.write_parquet(cfg.output_dir / f"oof_{fold}.parquet")
         metric_monitor.save(cfg.output_dir / f"metrics_{fold}.csv", fold=fold)
 
         model_state = engine.get_model_state_dict(ema_model.module)
@@ -250,8 +250,9 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
             break
 
     oof = pl.concat(oof_folds)
-    score_all = metrics.score(y_true=oof["y"].to_numpy(), y_pred=oof["y_pred"].to_numpy())
     oof.write_parquet(cfg.output_dir / "oof.parquet")
+
+    score_all = metrics.score(y_true=oof["y"].to_numpy(), y_pred=oof["y_pred"].to_numpy())
 
     logger.info(f"""\n
 
