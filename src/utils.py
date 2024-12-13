@@ -9,9 +9,9 @@ import pprint
 import random
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Hashable, Iterable, Sequence
 from logging import getLogger
-from typing import Any, Generator, Sequence, TypeVar
+from typing import Any, Generator, Literal, TypeVar, overload
 
 import joblib
 import matplotlib.pyplot as plt
@@ -146,11 +146,17 @@ def load_pickle(fp: pathlib.Path) -> Any:
     return obj
 
 
-def dbg(**kwargs: dict[Any, Any]) -> None:
+def dbg(**kwargs: Any]) -> None:
     print("\n ********** DEBUG INFO ********* \n")
     print(kwargs)
     if kwargs.get("stop"):
-        __import__("pdb").set_trace()
+        try:
+            __import__("ipdb").set_trace()
+        except ImportError:
+            __import__("pdb").set_trace()
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            raise e from None
 
 
 def get_model_param_size(model: torch.nn.Module, only_trainable: bool = False) -> int:
@@ -207,24 +213,44 @@ def run_cmd(cmd: Sequence[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
-_T = TypeVar("_T")
-_S = TypeVar("_S")
+_T_mp = TypeVar("_T_mp")
+_S_mp = TypeVar("_S_mp")
+
+
+@overload
+def call_mp_unordered(
+    fn: Callable[[_S_mp], _T_mp],
+    containers: Collection[_S_mp],
+    with_progress: Literal[True] = True,
+    desc: str | None = None,
+    n_jobs: int = -1,
+) -> list[_T_mp]: ...
+
+
+@overload
+def call_mp_unordered(
+    fn: Callable[[_S_mp], _T_mp],
+    containers: Iterable[_S_mp],
+    with_progress: Literal[False] = False,
+    desc: str | None = None,
+    n_jobs: int = -1,
+) -> list[_T_mp]: ...
 
 
 def call_mp_unordered(
-    fn: Callable[[_S], _T],
-    containers: Sequence[_S] | npt.NDArray,
+    fn: Callable[[_S_mp], _T_mp],
+    containers: Collection[_S_mp] | Iterable[_S_mp],
     with_progress: bool = False,
     desc: str | None = None,
     n_jobs: int = -1,
-) -> list[_T]:
+) -> list[_T_mp]:
     if desc is None:
         desc = "call func in multiprocessing"
     if n_jobs == -1:
         n_jobs = mp.cpu_count()
 
     with mp.get_context("spawn").Pool(processes=n_jobs) as pool:
-        if with_progress:
+        if with_progress and isinstance(containers, Collection):
             return list(
                 tqdm(
                     pool.imap_unordered(fn, containers),
@@ -237,12 +263,12 @@ def call_mp_unordered(
 
 
 def call_mp_ordered(
-    fn: Callable[[_S], _T],
-    containers: Sequence[_S] | npt.NDArray,
+    fn: Callable[[_S_mp], _T_mp],
+    containers: Sequence[_S_mp] | npt.NDArray,
     with_progress: bool = False,
     desc: str | None = None,
     n_jobs: int = -1,
-) -> list[_T]:
+) -> list[_T_mp]:
     if desc is None:
         desc = "call func in multiprocessing"
     if n_jobs == -1:
