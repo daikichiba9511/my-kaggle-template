@@ -2,11 +2,11 @@ import argparse
 
 import numpy as np
 import polars as pl
-import timm.utils as timm_utils
 import torch
 import torch.nn as nn
 import torch.utils.data as torch_data
 import wandb
+from timm.utils import model_ema
 from torch.amp import autocast_mode, grad_scaler
 from tqdm.auto import tqdm
 
@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
 def train_one_epoch(
     epoch: int,
     model: nn.Module,
-    ema_model: timm_utils.ModelEmaV3,
+    ema_model: model_ema.ModelEmaV3,
     optimizer: torch.optim.Optimizer,
     scheduler: optim.Schedulers,
     criterion: my_loss.LossFn,
@@ -50,7 +50,7 @@ def train_one_epoch(
     Args:
         epoch: number of epoch
         model: model to train
-        ema_model: timm_utils.ModelEmaV3
+        ema_model: ema_model.ModelEmaV3
         optimizer: torch.optim.Optimizer. I almost use AdamW.
         scheduler: optim.Schedulers. I almost use transformers.get_cosine_schedule_with_warmup
         criterion: LossFn. see get_loss_fn.

@@ -2,10 +2,10 @@ from typing import Any, TypeAlias, cast
 
 import torch
 import torch.nn as nn
-from timm.utils import ModelEmaV3
+from timm.utils import model_ema
 
 
-class Model(nn.Module):
+class CustomModel(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
@@ -13,24 +13,24 @@ class Model(nn.Module):
         raise NotImplementedError
 
 
-Models: TypeAlias = Model
+Models: TypeAlias = CustomModel
 
 
-def get_model(model_name: str, model_params: dict[str, Any]) -> tuple[Models, ModelEmaV3]:
+def get_model(model_name: str, model_params: dict[str, Any]) -> tuple[Models, model_ema.ModelEmaV3]:
     if model_name == "SimpleNN":
-        model = Model(**model_params)
-        ema_model = ModelEmaV3(model, decay=0.9998)
+        model = CustomModel(**model_params)
+        ema_model = model_ema.ModelEmaV3(model, decay=0.9998)
         return model, ema_model
     raise ValueError(f"Unknown model name: {model_name}")
 
 
 def compile_models(
-    model: Models, ema_model: ModelEmaV3, compile_mode: str = "max-autotune", dynamic: bool = False
-) -> tuple[Models, ModelEmaV3]:
+    model: Models, ema_model: model_ema.ModelEmaV3, compile_mode: str = "max-autotune", dynamic: bool = False
+) -> tuple[Models, model_ema.ModelEmaV3]:
     compiled_model = torch.compile(model, mode=compile_mode, dynamic=dynamic)
     compiled_model = cast(Models, compiled_model)
     compiled_ema_model = torch.compile(ema_model, mode=compile_mode, dynamic=dynamic)
-    compiled_ema_model = cast(ModelEmaV3, compiled_ema_model)
+    compiled_ema_model = cast(model_ema.ModelEmaV3, compiled_ema_model)
     return compiled_model, compiled_ema_model
 
 
