@@ -146,7 +146,7 @@ def load_pickle(fp: pathlib.Path) -> Any:
     return obj
 
 
-def dbg(**kwargs: Any]) -> None:
+def dbg(**kwargs: Any) -> None:
     print("\n ********** DEBUG INFO ********* \n")
     print(kwargs)
     if kwargs.get("stop"):
