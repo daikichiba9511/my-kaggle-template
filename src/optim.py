@@ -11,9 +11,10 @@ logger = getLogger(__name__)
 def get_params_no_decay(
     model: torch.nn.Module,
     weight_decay: float,
-    no_decay: tuple[str, ...] = ("bias", "LayerNorm.bias", "LayerNorm.weight"),
+    no_decay: tuple[str, ...] = ("bias", "ln.bias", "ln.weight"),
 ) -> list[dict[str, Any]]:
     model_params = list(model.named_parameters())
+    print([k for k, _ in model_params])
     params = [
         {
             "params": [p for n, p in model_params if not any(nd in n for nd in no_decay)],
