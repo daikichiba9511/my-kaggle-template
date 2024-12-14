@@ -309,7 +309,7 @@ class UpdateManager:
         return False
 
     def check_epoch(self, epoch: int) -> bool:
-        return epoch < self._n_epochs
+        return epoch >= self._n_epochs
 
     @property
     def best_score(self) -> float:
