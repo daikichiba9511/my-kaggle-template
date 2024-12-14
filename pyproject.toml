@@ -51,20 +51,20 @@ dev-dependencies = [
 ]
 
 # pipの時はこっち
-# [project.optional-dependencies]
-# dev = [
-# "matplotlib",
-# "japanize-matplotlib",
-# "seaborn",
-# "wandb",
-# "ruff",
-# "pytest",
-# "mypy",
-# "jupyterlab",
-# "quarto",
-# "kaggle",
-# "torchinfo",
-# ]
+[project.optional-dependencies]
+dev = [
+  "matplotlib",
+  "japanize-matplotlib",
+  "seaborn",
+  "wandb",
+  "ruff",
+  "pytest",
+  "mypy",
+  "jupyterlab",
+  "quarto",
+  "kaggle",
+  "torchinfo",
+]
 
 [build-system]
 requires = ["hatchling"]
