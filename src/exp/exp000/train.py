@@ -213,7 +213,7 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
                 grad_accum_steps=cfg.train_grad_accum_steps,
             )
             valid_loss_avg, valid_score, valid_oof = valid_one_epoch(
-                model=ema_model.module, loader=valid_loader, criterion=criterion, device=cfg.device
+                model=model, loader=valid_loader, criterion=criterion, device=cfg.device
             )
             # --- save last epoch: 基本的にはearly stoppingしない
             if update_manager.check_epoch(epoch):
