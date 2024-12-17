@@ -216,7 +216,7 @@ class MetricsMonitor:
 def step(
     step: int,
     model: nn.Module,
-    optimizer: torch.optim.Optimizer,
+    optimizer: torch.optim.optimizer.Optimizer,
     loss: torch.Tensor,
     max_norm: float,
     scaler: grad_scaler.GradScaler | None = None,
@@ -247,30 +247,34 @@ def step(
     if has_nan and raise_nan:
         raise ValueError("Loss has nan value")
 
+    norm = torch.tensor(0.0)
     if scaler is not None:
-        scaled_loss = scaler.scale(loss)
-        scaled_loss.backward()
+        scaler.scale(loss).backward()
+
         if step % grad_accum_steps == 0:
             scaler.unscale_(optimizer)
-            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+            norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
             scaler.step(optimizer)
             scaler.update()
-        else:
-            grad_norm = torch.tensor(0.0)
+            if ema_model is not None:
+                ema_model.update(model)
+            if scheduler is not None:
+                scheduler.step()
+            optimizer.zero_grad()
+
     else:
         loss.backward()
+
         if step % grad_accum_steps == 0:
-            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+            norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
             optimizer.step()
-        else:
-            grad_norm = torch.tensor(0.0)
+            if ema_model is not None:
+                ema_model.update(model)
+            if scheduler is not None:
+                scheduler.step()
+            optimizer.zero_grad()
 
-    if scheduler is not None:
-        scheduler.step()
-    if ema_model is not None:
-        ema_model.update(model)
-
-    return grad_norm
+    return norm
 
 
 def make_oof(
