@@ -74,8 +74,8 @@ def train_one_epoch(
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
         with autocast_mode.autocast(device_type=device.type, enabled=use_amp, dtype=torch.float16):
             output = model(x)
-        y_pred = output
-        loss = criterion(y_pred, y)
+            y_pred = output
+            loss = criterion(y_pred, y)
 
         # --- Update
         grad_norm = engine.step(
