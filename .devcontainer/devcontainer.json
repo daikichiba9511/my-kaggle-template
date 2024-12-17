@@ -30,7 +30,6 @@
                 "Gruntfuggly.todo-tree",
                 "charliermarsh.ruff",
                 "tamasfe.even-better-toml",
-                "oderwat.indent-rainbow",
                 "yzhang.markdown-all-in-one",
                 "ionutvmi.path-autocomplete",
                 "eamodio.gitlens",
