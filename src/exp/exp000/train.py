@@ -192,6 +192,7 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
         else:
             scheduler_params = cfg.train_scheduler_params
         scheduler = optim.get_scheduler(cfg.train_scheduler_name, scheduler_params, optimizer=optimizer)
+        scaler = grad_scaler.GradScaler(enabled=cfg.train_use_amp)
 
         criterion = my_loss.get_loss_fn(cfg.train_loss_name, cfg.train_loss_params)
 
@@ -211,6 +212,7 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
                 use_amp=cfg.train_use_amp,
                 max_norm=cfg.train_max_norm,
                 grad_accum_steps=cfg.train_grad_accum_steps,
+                scaler=scaler,
             )
             valid_loss_avg, valid_score, valid_oof = valid_one_epoch(
                 model=model, loader=valid_loader, criterion=criterion, device=cfg.device
