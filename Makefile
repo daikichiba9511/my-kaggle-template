@@ -5,15 +5,21 @@ PYTHONPATH := $(shell pwd)
 
 .PHONY: setup
 setup: ## setup install packages
+	if ! command -v uv &> /dev/null; then \
+		echo bootstrap of uv; \
+		curl -LsSf https://astral.sh/uv/install.sh | sh; \
+	fi
+	@uv python pin 3.10
+	@uv venv
+	@uv pip install --upgrade pip setuptools wheel
+	@UV_HTTP_TIMEOUT=120 uv sync
+	@echo "Setup Done ✅"
+
+.PHONY: setup-via-pip
+setup-via-pip:  ## setup install packages via pip
 	@python -m pip install --upgrade pip setuptools wheel
 	@python -m pip install -e .
 	@python -m pip install -e .[dev] --no-warn-script-location
-	# if command -v uv &> /dev/null; then \
-	# 	echo bootstrap of uv; \
-	# 	curl -LsSf https://astral.sh/uv/install.sh | sh; \
-	# fi
-	# @uv python pin 3.10
-	# @uv sync
 	@echo "Setup Done ✅"
 
 .PHONY: download_data
@@ -45,7 +51,7 @@ test: ## run test with pytest
 
 .PHONY: setup-dev
 setup-dev: ## setup my dev env by installing my dotfiles
-	[ ! -d ~/dotfiles ] && git@github.com:daikichiba9511/dotfiles.git ~/dotfiles ;\
+	[ ! -d ~/dotfiles ] && git clone --depth 1 git@github.com:daikichiba9511/dotfiles.git ~/dotfiles ;\
 	cd ~/dotfiles && bash setup.sh && cd -
 
 .PHONY: lock

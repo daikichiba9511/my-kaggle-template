@@ -36,7 +36,7 @@ def train_one_epoch(
     epoch: int,
     model: nn.Module,
     ema_model: model_ema.ModelEmaV3,
-    optimizer: torch.optim.Optimizer,
+    optimizer: torch.optim.optimizer.Optimizer,
     scheduler: optim.Schedulers,
     criterion: my_loss.LossFn,
     loader: torch_data.DataLoader[dataset.TrainBatch],
