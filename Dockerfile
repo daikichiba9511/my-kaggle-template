@@ -12,6 +12,7 @@ RUN apt update -y \
     tzdata \
     sudo \
     git \
+    ssh \
     vim \
     # for opencv \
     libgl1-mesa-dev
