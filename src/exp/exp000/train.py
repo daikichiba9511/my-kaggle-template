@@ -21,21 +21,13 @@ COMMIT_HASH = utils.get_commit_hash_head()
 CALLED_TIME = log.get_called_time()
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--compile", action="store_true")
-    parser.add_argument("--seed", type=int, default=42)
-    return parser.parse_args()
-
-
 # =============================================================================
 # TrainFn
 # =============================================================================
 def train_one_epoch(
     epoch: int,
     model: nn.Module,
-    ema_model: model_ema.ModelEmaV3,
+    ema_model: model_ema.ModelEmaV3 | None,
     optimizer: torch.optim.optimizer.Optimizer,
     scheduler: optim.Schedulers,
     criterion: my_loss.LossFn,
@@ -65,11 +57,14 @@ def train_one_epoch(
         lr : float
     """
     lr = scheduler.get_last_lr()[0]
+    optimizer.zero_grad()
     model = model.train()
     pbar = tqdm(enumerate(loader), total=len(loader), desc="Train", dynamic_ncols=True)
     loss_meter = engine.AverageMeter("train/loss")
+    update_per_epoch = (len(loader) + grad_accum_steps - 1) // grad_accum_steps
+    num_updates = update_per_epoch * epoch
 
-    for batch_idx, batch in pbar:
+    for step, batch in pbar:
         _sample_id, x, y = batch
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
         with autocast_mode.autocast(device_type=device.type, enabled=use_amp, dtype=torch.float16):
@@ -78,8 +73,10 @@ def train_one_epoch(
             loss = criterion(y_pred, y)
 
         # --- Update
+        if step % grad_accum_steps == 0:
+            num_updates += 1
         grad_norm = engine.step(
-            step=batch_idx,
+            step=step,
             model=model,
             optimizer=optimizer,
             loss=loss,
@@ -88,6 +85,7 @@ def train_one_epoch(
             ema_model=ema_model,
             scheduler=scheduler,
             grad_accum_steps=grad_accum_steps,
+            num_updates=num_updates,
         )
 
         loss_meter.update(loss.detach().cpu().item())
@@ -146,7 +144,13 @@ def valid_one_epoch(
     return loss_meter.avg, valid_score, oof
 
 
-def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
+def main(
+    debug: bool = False,
+    compile: bool = False,
+    seed: int = 42,
+    compile_mode: str = "max-autotune",
+    compile_dynamic: bool = False,
+) -> None:
     cfg = config.Config(is_debug=debug, seed=seed)
     utils.pinfo(cfg.model_dump())
     cfg.output_dir.mkdir(exist_ok=True, parents=True)
@@ -159,10 +163,8 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
     for fold in range(cfg.n_folds):
         logger.info(f"Start fold: {fold}")
         utils.seed_everything(cfg.seed + fold)
-        if cfg.is_debug:
-            run = None
-        else:
-            run = wandb.init(
+        run = (
+            wandb.init(
                 project=constants.COMPE_NAME,
                 name=f"{cfg.name}_{fold}",
                 config=cfg.model_dump(),
@@ -170,10 +172,14 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
                 group=f"{fold}",
                 dir="./src",
             )
-        model, ema_model = models.get_model(cfg.model_name, cfg.model_params)
+            if not cfg.is_debug
+            else None
+        )
+        model, ema_model = models.get_model(cfg.model_name, cfg.model_params, cfg.use_ema, cfg.ema_params)
         if compile:
-            model, ema_model = models.compile_models(model, ema_model)
-        model, ema_model = model.to(cfg.device), ema_model.to(cfg.device)
+            model, ema_model = models.compile_models(model, ema_model, compile_mode, compile_dynamic)
+        model = model.to(cfg.device, non_blocking=True)
+        ema_model = ema_model.to(cfg.device, non_blocking=True) if ema_model is not None else None
 
         train_loader, valid_loader = dataset.init_dataloader(
             df_fp=cfg.train_data_fp,
@@ -215,7 +221,10 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
                 scaler=scaler,
             )
             valid_loss_avg, valid_score, valid_oof = valid_one_epoch(
-                model=model, loader=valid_loader, criterion=criterion, device=cfg.device
+                model=model if ema_model is None else ema_model.module,
+                loader=valid_loader,
+                criterion=criterion,
+                device=cfg.device,
             )
             # --- save last epoch: 基本的にはearly stoppingしない
             if update_manager.check_epoch(epoch):
@@ -241,7 +250,7 @@ def main(debug: bool = False, compile: bool = False, seed: int = 42) -> None:
 
         metric_monitor.save(cfg.output_dir / f"metrics_{fold}.csv", fold=fold)
 
-        model_state = engine.get_model_state_dict(ema_model.module)
+        model_state = engine.get_model_state_dict(ema_model.module if ema_model is not None else model)
         save_fp_model = cfg.output_dir / f"last_model_{fold}.pth"
         torch.save(model_state, save_fp_model)
         logger.info(f"Saved model to {save_fp_model}")
@@ -278,5 +287,17 @@ Score Whole Fold: {score_all}
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(debug=args.debug, compile=args.compile, seed=args.seed)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--compile_mode", type=str, default="max-autotune", choices=["default", "max-autotune"])
+    parser.add_argument("--compile_dynamic", action="store_true")
+    args = parser.parse_args()
+    main(
+        debug=args.debug,
+        compile=args.compile,
+        seed=args.seed,
+        compile_mode=args.compile_mode,
+        compile_dynamic=args.compile_dynamic,
+    )

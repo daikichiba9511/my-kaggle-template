@@ -16,19 +16,26 @@ class CustomModel(nn.Module):
 Models: TypeAlias = CustomModel
 
 
-def get_model(model_name: str, model_params: dict[str, Any]) -> tuple[Models, model_ema.ModelEmaV3]:
+def get_model(
+    model_name: str, model_params: dict[str, Any], use_ema: bool = True, ema_params: dict[str, Any] | None = None
+) -> tuple[Models, model_ema.ModelEmaV3 | None]:
+    if ema_params is None:
+        ema_params = {"decal": 0.995, "update_after_step": 100, "use_warmup": True, "warmup_power": 0.75}
+
     if model_name == "SimpleNN":
         model = CustomModel(**model_params)
-        ema_model = model_ema.ModelEmaV3(model, decay=0.9998)
+        ema_model = model_ema.ModelEmaV3(model, **ema_params) if use_ema else None
         return model, ema_model
     raise ValueError(f"Unknown model name: {model_name}")
 
 
 def compile_models(
-    model: Models, ema_model: model_ema.ModelEmaV3, compile_mode: str = "max-autotune", dynamic: bool = False
-) -> tuple[Models, model_ema.ModelEmaV3]:
+    model: Models, ema_model: model_ema.ModelEmaV3 | None, compile_mode: str = "max-autotune", dynamic: bool = False
+) -> tuple[Models, model_ema.ModelEmaV3 | None]:
     compiled_model = torch.compile(model, mode=compile_mode, dynamic=dynamic)
     compiled_model = cast(Models, compiled_model)
+    if ema_model is None:
+        return compiled_model, None
     compiled_ema_model = torch.compile(ema_model, mode=compile_mode, dynamic=dynamic)
     compiled_ema_model = cast(model_ema.ModelEmaV3, compiled_ema_model)
     return compiled_model, compiled_ema_model
