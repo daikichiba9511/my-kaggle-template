@@ -11,6 +11,7 @@ import torch.nn as nn
 import wandb
 from matplotlib import axes, figure
 from matplotlib import pyplot as plt
+from timm.utils import model_ema
 from torch.amp import grad_scaler
 
 from src import optim
@@ -220,9 +221,10 @@ def step(
     loss: torch.Tensor,
     max_norm: float,
     scaler: grad_scaler.GradScaler | None = None,
-    ema_model: nn.Module | None = None,
+    ema_model: model_ema.ModelEmaV3 | None = None,
     scheduler: optim.Schedulers | None = None,
     grad_accum_steps: int = 1,
+    num_updates: int | None = None,
     skip_nan: bool = False,
     raise_nan: bool = False,
 ) -> torch.Tensor:
@@ -257,7 +259,7 @@ def step(
             scaler.step(optimizer)
             scaler.update()
             if ema_model is not None:
-                ema_model.update(model)
+                ema_model.update(model, step=num_updates)
             if scheduler is not None:
                 scheduler.step()
             optimizer.zero_grad()

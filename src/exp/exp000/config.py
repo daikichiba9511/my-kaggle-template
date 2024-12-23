@@ -65,6 +65,8 @@ class Config(pydantic.BaseModel):
     # -- Model
     model_name: str = "SimpleNN"
     model_params: dict[str, float] = {}
+    use_ema: bool = True
+    ema_params: dict[str, float] = {"decal": 0.999, "update_after_step": 100, "use_warmup": True, "warmup_power": 0.75}
 
 
 class GBDTConfig(pydantic.BaseModel):
