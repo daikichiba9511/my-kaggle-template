@@ -2,8 +2,8 @@ import logging
 import pathlib
 import pprint
 from collections.abc import Sequence
+from typing import Any, TypedDict
 
-import numpy as np
 import numpy.typing as npt
 import polars as pl
 import torch
@@ -14,7 +14,7 @@ from matplotlib import pyplot as plt
 from timm.utils import model_ema
 from torch.amp import grad_scaler
 
-from src import optim
+from src import optim, utils
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def freeze(model: nn.Module, keys: Sequence[str]) -> None:
     """Freeze model parameters with keys"""
     for name, param in model.named_parameters():
         for key in keys:
-            if name in key:
+            if key in name:
                 param.requires_grad = False
 
 
@@ -31,8 +31,14 @@ def unfreeze(model: nn.Module, keys: Sequence[str]) -> None:
     """Unfreeze model parameters with keys"""
     for name, param in model.named_parameters():
         for key in keys:
-            if name in key:
+            if key in name:
                 param.requires_grad = True
+
+
+class AvgMeterDict(TypedDict):
+    name: str
+    avg: float
+    raw_values: list[float | int]
 
 
 class AverageMeter:
@@ -62,7 +68,7 @@ class AverageMeter:
         self.raws: list[float | int] = []
 
     def update(self, value: float | int, n: int = 1) -> None:
-        if value in [np.nan, np.inf, -np.inf, float("inf"), float("-inf"), float("nan")]:
+        if utils.is_inf(value) or utils.is_nan(value):
             logger.info("Skip nan or inf value")
             return None
 
@@ -72,7 +78,7 @@ class AverageMeter:
         self.avg = self.sum / self.count
         self.raws.append(value)
 
-    def to_dict(self) -> dict[str, list[float | int] | str | float]:
+    def to_dict(self) -> AvgMeterDict:
         return {
             "name": self.name,
             "avg": self.avg,
@@ -100,16 +106,68 @@ class AverageMeters:
         for meter in self.meters.values():
             meter.reset()
 
-    def to_dict(self) -> dict[str, dict[str, list[float | int] | str | float]]:
+    def to_dict(self) -> dict[str, AvgMeterDict]:
         return {name: meter.to_dict() for name, meter in self.meters.items()}
 
 
-def get_model_state_dict(model: nn.Module) -> dict[str, nn.Parameter]:
+def get_model_state_dict(model: nn.Module) -> dict[str, Any]:
+    """Get model state dict
+
+    Args:
+        model : nn.Module or compiled model
+
+    Returns:
+        state_dict : model state dict
+    """
     if hasattr(model, "_orig_mod"):
         # compileしたmodel
         logger.info("Detect compiled model. Accessing original model by _orig_mod")
         return model._orig_mod.state_dict()
     return model.state_dict()
+
+
+class FullCKPT(TypedDict):
+    model: dict[str, Any]
+    optimizer: dict[str, Any]
+    scheduler: dict[str, Any]
+    scaler: dict[str, Any]
+    epoch: int
+
+
+class WeightOnlyCKPT(TypedDict):
+    model: dict[str, Any]
+
+
+CKPT = FullCKPT | WeightOnlyCKPT
+
+
+def make_checkpoints(
+    model: nn.Module,
+    optimizer: torch.optim.optimizer.Optimizer,
+    scheduler: optim.Schedulers,
+    scaler: grad_scaler.GradScaler,
+    epoch: int,
+) -> FullCKPT:
+    return {
+        "model": get_model_state_dict(model),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "scaler": scaler.state_dict(),
+        "epoch": epoch,
+    }
+
+
+def load_checkpoints(
+    model: nn.Module,
+    optimizer: torch.optim.optimizer.Optimizer,
+    scheduler: optim.Schedulers,
+    scaler: grad_scaler.GradScaler,
+    checkpoint: FullCKPT,
+) -> None:
+    model.load_state_dict(checkpoint["model"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
+    scheduler.load_state_dict(checkpoint["scheduler"])
+    scaler.load_state_dict(checkpoint["scaler"])
 
 
 class EarlyStopping:
@@ -222,7 +280,7 @@ def step(
     model: nn.Module,
     optimizer: torch.optim.optimizer.Optimizer,
     loss: torch.Tensor,
-    max_norm: float,
+    max_norm: float | None = None,
     scaler: grad_scaler.GradScaler | None = None,
     ema_model: model_ema.ModelEmaV3 | None = None,
     scheduler: optim.Schedulers | None = None,
@@ -234,21 +292,27 @@ def step(
     """Step for training
 
     Args:
-        model (nn.Module): model
-        optimizer (torch.optim.Optimizer): optimizer
-        loss (torch.Tensor): loss
-        scaler (grad_scaler.GradScaler): scaler
-        max_norm (float): max_norm
-        ema_model (nn.Module | None): ema_model
-        scheduler (torch.optim.lr_scheduler._LRScheduler | None): scheduler
+        step : step number
+        model : nn.Module
+        optimizer : torch.optim.optimizer.Optimizer
+        loss : loss tensor
+        max_norm : If not None, clip grad norm. Default is None. If None, not clip grad norm
+        scaler : If not None, use scaler.step() and scaler.update()
+        ema_model : If not None, ema_model update module attribute of ema_model using model
+        scheduler : If not None, scheduler.step() is called
+        grad_accum_steps : If not None, accumulate grad for grad_accum_steps times
+        num_updates : If not None, ema_model update with num_updates
+        skip_nan : If True, skip nan loss
+        raise_nan : If True, raise ValueError when loss has nan value
 
     Returns:
-        torch.Tensor: grad_norm
+        norm: If max_norm is not None, return grad norm of model parameters
     """
     has_nan = torch.isnan(loss).any()
     if has_nan and skip_nan:
         logger.info("Skip nan loss")
         return torch.tensor(0.0)
+
     if has_nan and raise_nan:
         raise ValueError("Loss has nan value")
 
@@ -258,9 +322,12 @@ def step(
 
         if step % grad_accum_steps == 0:
             scaler.unscale_(optimizer)
-            norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+            if max_norm is not None:
+                norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+
             scaler.step(optimizer)
             scaler.update()
+
             if ema_model is not None:
                 ema_model.update(model, step=num_updates)
             if scheduler is not None:
@@ -271,8 +338,11 @@ def step(
         loss.backward()
 
         if step % grad_accum_steps == 0:
-            norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+            if max_norm is not None:
+                norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
+
             optimizer.step()
+
             if ema_model is not None:
                 ema_model.update(model)
             if scheduler is not None:
@@ -286,9 +356,9 @@ def make_oof(
     x: npt.NDArray,
     y: npt.NDArray,
     y_pred: npt.NDArray,
-    x_names: list[str],
-    y_names: list[str],
-    sample_id: list[str] | None = None,
+    x_names: Sequence[str],
+    y_names: Sequence[str],
+    sample_id: Sequence[str] | None = None,
 ) -> pl.DataFrame:
     y_pred_names = [f"{y_name}_pred" for y_name in y_names]
     x_df = pl.DataFrame(x, x_names, orient="row")

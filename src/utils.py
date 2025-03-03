@@ -9,7 +9,7 @@ import pprint
 import random
 import subprocess
 import time
-from collections.abc import Callable, Collection, Hashable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from logging import getLogger
 from typing import Any, Generator, Literal, TypeVar, overload
 
@@ -352,6 +352,14 @@ def load_json(fp: pathlib.Path) -> object:
     with fp.open("r") as f:
         obj = json.load(f)
     return obj
+
+
+def is_nan(x: Any) -> bool:
+    return (isinstance(x, float) and math.isnan(x)) or (isinstance(x, np.floating) and np.isnan(x))
+
+
+def is_inf(x: Any) -> bool:
+    return (isinstance(x, float) and math.isinf(x)) or (isinstance(x, np.floating) and np.isinf(x))
 
 
 # =============================================================================
