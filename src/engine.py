@@ -1,7 +1,7 @@
 import logging
 import pathlib
 import pprint
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -163,8 +163,8 @@ class EarlyStopping:
 
 
 class MetricsMonitor:
-    def __init__(self, metrics: Sequence[str]) -> None:
-        self.metrics = metrics
+    def __init__(self, show_metrics: Sequence[str]) -> None:
+        self.show_metrics = show_metrics
         self._metrics_df = pl.DataFrame()
 
     def update(self, metrics: dict[str, float | int]) -> None:
@@ -175,12 +175,13 @@ class MetricsMonitor:
             self._metrics_df = pl.concat([self._metrics_df, _metrics], how="vertical").sort(by="epoch")
 
         if wandb.run is not None:
-            wandb.log(metrics)
-        logger.info(f"Metrics updated: {pprint.pformat(metrics)}")
+            wandb.log(metrics, step=int(metrics["epoch"]))
+
+        logger.info(f"Metrics updated:\n {pprint.pformat(metrics)}")
 
     def show(self, use_logger: bool = False, log_interval: int = 1) -> None:
         """print metrics to logger"""
-        logging_metrics = self._metrics_df.filter(
+        logging_metrics = self._metrics_df.select(self.show_metrics).filter(
             pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval)))
         )
         msg = f"\n{logging_metrics.to_pandas().to_markdown()}\n"
@@ -197,6 +198,7 @@ class MetricsMonitor:
         assert isinstance(fig, figure.Figure)
         if isinstance(col, str):
             col = [col]
+
         for c in col:
             data = self._metrics_df[c].to_numpy()
             ax.plot(data, label=c)
@@ -208,8 +210,9 @@ class MetricsMonitor:
         fig.savefig(save_path)
         plt.close("all")
 
-    def save(self, save_path: pathlib.Path, fold: int) -> None:
-        self._metrics_df = self._metrics_df.with_columns(fold=pl.lit(fold))
+    def save(self, save_path: pathlib.Path, fold: int | None = None) -> None:
+        if fold is not None:
+            self._metrics_df = self._metrics_df.with_columns(fold=pl.lit(fold))
         self._metrics_df.write_csv(save_path)
         logger.info(f"Saved metrics to {save_path}")
 
