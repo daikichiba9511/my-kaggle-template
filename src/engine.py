@@ -13,6 +13,7 @@ from matplotlib import axes, figure
 from matplotlib import pyplot as plt
 from timm.utils import model_ema
 from torch.amp import grad_scaler
+from typing_extensions import NotRequired
 
 from src import optim, utils
 
@@ -132,6 +133,7 @@ class FullCKPT(TypedDict):
     scheduler: dict[str, Any]
     scaler: dict[str, Any]
     epoch: int
+    ema_model: NotRequired[dict[str, Any]]
 
 
 class WeightOnlyCKPT(TypedDict):
@@ -147,14 +149,18 @@ def make_checkpoints(
     scheduler: optim.Schedulers,
     scaler: grad_scaler.GradScaler,
     epoch: int,
+    ema_model: model_ema.ModelEmaV3 | None = None,
 ) -> FullCKPT:
-    return {
+    ckpts: FullCKPT = {
         "model": get_model_state_dict(model),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
         "scaler": scaler.state_dict(),
         "epoch": epoch,
     }
+    if ema_model is not None:
+        ckpts["ema_model"] = ema_model.state_dict()
+    return ckpts
 
 
 def load_checkpoints(
@@ -163,29 +169,34 @@ def load_checkpoints(
     scheduler: optim.Schedulers,
     scaler: grad_scaler.GradScaler,
     checkpoint: FullCKPT,
+    ema_model: model_ema.ModelEmaV3 | None = None,
 ) -> None:
     model.load_state_dict(checkpoint["model"])
     optimizer.load_state_dict(checkpoint["optimizer"])
     scheduler.load_state_dict(checkpoint["scheduler"])
     scaler.load_state_dict(checkpoint["scaler"])
+    if ema_model is not None and "ema_model" in checkpoint:
+        ema_model.load_state_dict(checkpoint["ema_model"])
+    elif ema_model is not None and "ema_model" not in checkpoint:
+        raise ValueError("ema_model is not in the checkpoint. Please check the checkpoint keys : ", checkpoint.keys())
 
 
 class EarlyStopping:
     def __init__(
         self,
         patience: int,
-        is_maximise: bool = True,
+        is_maximize: bool = True,
         delta: float = 0.0,
     ) -> None:
         self._patience = patience
-        self._is_maximise = is_maximise
-        self.best_score = float("-inf") if self._is_maximise else float("inf")
+        self._is_maximize = is_maximize
+        self.best_score = float("-inf") if self._is_maximize else float("inf")
         self._delta = delta
         self._reset_counter()
         self.is_improved = False
 
     def _can_update(self, score: float, best_score: float) -> bool:
-        if self._is_maximise:
+        if self._is_maximize:
             self.is_improved = score + self._delta > best_score
             return self.is_improved
         else:
@@ -371,24 +382,44 @@ def make_oof(
 
 
 class UpdateManager:
-    def __init__(self, is_maximize: bool, n_epochs: int) -> None:
+    def __init__(
+        self, is_maximize: bool, n_epochs: int, early_stop_patience: int | None = None, eps: float = 1e-8
+    ) -> None:
         self._is_maximize = is_maximize
         self._n_epochs = n_epochs
         self._best_score = float("-inf") if self._is_maximize else float("inf")
+        self._early_stop_patience = early_stop_patience
+        self._counter = 0
+        self._eps = eps
 
-    def check_score(self, score: float) -> bool:
+    def _detect_update(self, score: float) -> bool:
         if self._is_maximize:
-            if score > self._best_score:
-                self._best_score = score
-                return True
+            return score + self._eps >= self._best_score
         else:
-            if score < self._best_score:
-                self._best_score = score
-                return True
-        return False
+            return score + self._eps < self._best_score
 
-    def check_epoch(self, epoch: int) -> bool:
-        return epoch >= self._n_epochs
+    def check_score_updated(self, score: float, logging: bool = False) -> bool:
+        if self._detect_update(score):
+            if logging:
+                logger.info(f"Score improved from {self._best_score} to {score}")
+            self._best_score = score
+            self._counter = 0
+            return True
+        else:
+            if self._early_stop_patience is not None:
+                self._counter += 1
+                if logging:
+                    logger.info(
+                        f"EarlyStopping counter: {self._counter} out of {self._early_stop_patience}. best: {self._best_score}"
+                    )
+            return False
+
+    def is_last_epoch(self, epoch: int) -> bool:
+        return epoch == self._n_epochs - 1
+
+    @property
+    def is_early_stopping(self) -> bool:
+        return self._early_stop_patience is not None and self._counter >= self._early_stop_patience
 
     @property
     def best_score(self) -> float:
