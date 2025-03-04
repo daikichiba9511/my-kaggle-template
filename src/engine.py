@@ -185,18 +185,18 @@ class EarlyStopping:
     def __init__(
         self,
         patience: int,
-        is_maximise: bool = True,
+        is_maximize: bool = True,
         delta: float = 0.0,
     ) -> None:
         self._patience = patience
-        self._is_maximise = is_maximise
-        self.best_score = float("-inf") if self._is_maximise else float("inf")
+        self._is_maximize = is_maximize
+        self.best_score = float("-inf") if self._is_maximize else float("inf")
         self._delta = delta
         self._reset_counter()
         self.is_improved = False
 
     def _can_update(self, score: float, best_score: float) -> bool:
-        if self._is_maximise:
+        if self._is_maximize:
             self.is_improved = score + self._delta > best_score
             return self.is_improved
         else:
