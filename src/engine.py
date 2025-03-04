@@ -13,6 +13,7 @@ from matplotlib import axes, figure
 from matplotlib import pyplot as plt
 from timm.utils import model_ema
 from torch.amp import grad_scaler
+from typing_extensions import NotRequired
 
 from src import optim, utils
 
@@ -132,6 +133,7 @@ class FullCKPT(TypedDict):
     scheduler: dict[str, Any]
     scaler: dict[str, Any]
     epoch: int
+    ema_model: NotRequired[dict[str, Any]]
 
 
 class WeightOnlyCKPT(TypedDict):
@@ -147,14 +149,18 @@ def make_checkpoints(
     scheduler: optim.Schedulers,
     scaler: grad_scaler.GradScaler,
     epoch: int,
+    ema_model: model_ema.ModelEmaV3 | None = None,
 ) -> FullCKPT:
-    return {
+    ckpts: FullCKPT = {
         "model": get_model_state_dict(model),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
         "scaler": scaler.state_dict(),
         "epoch": epoch,
     }
+    if ema_model is not None:
+        ckpts["ema_model"] = ema_model.state_dict()
+    return ckpts
 
 
 def load_checkpoints(
@@ -163,11 +169,16 @@ def load_checkpoints(
     scheduler: optim.Schedulers,
     scaler: grad_scaler.GradScaler,
     checkpoint: FullCKPT,
+    ema_model: model_ema.ModelEmaV3 | None = None,
 ) -> None:
     model.load_state_dict(checkpoint["model"])
     optimizer.load_state_dict(checkpoint["optimizer"])
     scheduler.load_state_dict(checkpoint["scheduler"])
     scaler.load_state_dict(checkpoint["scaler"])
+    if ema_model is not None and "ema_model" in checkpoint:
+        ema_model.load_state_dict(checkpoint["ema_model"])
+    elif ema_model is not None and "ema_model" not in checkpoint:
+        raise ValueError("ema_model is not in the checkpoint. Please check the checkpoint keys : ", checkpoint.keys())
 
 
 class EarlyStopping:
