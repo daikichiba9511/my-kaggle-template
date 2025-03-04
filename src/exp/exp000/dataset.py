@@ -46,6 +46,7 @@ def init_dataloader(
     num_workers: int = 16,
     fold: int = 0,
     debug: bool = False,
+    fulltrain: bool = False,
 ) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
     if mp.cpu_count() < num_workers:
         num_workers = mp.cpu_count()
@@ -102,7 +103,7 @@ def _test_dataloaders() -> None:
 
     cfg = config.Config(is_debug=True)
     dl_train, dl_valid = init_dataloader(
-        df_fp=cfg.train_data_fp,
+        df_fp=cfg.data_fp_train,
         train_batch_size=cfg.train_batch_size,
         valid_batch_size=cfg.valid_batch_size,
         num_workers=cfg.num_workers,

@@ -52,6 +52,8 @@ class Config(pydantic.BaseModel):
     train_is_maximize: bool = False
     train_max_norm: float = 1000.0
     train_grad_accum_steps: int = 1
+    train_save_best_model: bool = True
+    train_early_stopping_round: int | None = None
 
     # -- Valid
     valid_batch_size: int = 32
@@ -59,11 +61,11 @@ class Config(pydantic.BaseModel):
 
     # -- Data
     n_folds: int = 5
-    train_data_fp: pathlib.Path = constants.DATA_DIR / "train.csv"
-    test_data_fp: pathlib.Path = constants.DATA_DIR / "test.csv"
+    data_fp_train: pathlib.Path = constants.DATA_DIR / "train.csv"
+    data_fp_valid: pathlib.Path = constants.DATA_DIR / "test.csv"
 
     # -- Model
-    model_name: str = "SimpleNN"
+    model_arch: str = "SimpleNN"
     model_params: dict[str, float] = {}
     use_ema: bool = True
     ema_params: dict[str, float] = {"decal": 0.999, "update_after_step": 100, "use_warmup": True, "warmup_power": 0.75}
