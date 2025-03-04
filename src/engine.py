@@ -382,24 +382,44 @@ def make_oof(
 
 
 class UpdateManager:
-    def __init__(self, is_maximize: bool, n_epochs: int) -> None:
+    def __init__(
+        self, is_maximize: bool, n_epochs: int, early_stop_patience: int | None = None, eps: float = 1e-8
+    ) -> None:
         self._is_maximize = is_maximize
         self._n_epochs = n_epochs
         self._best_score = float("-inf") if self._is_maximize else float("inf")
+        self._early_stop_patience = early_stop_patience
+        self._counter = 0
+        self._eps = eps
 
-    def check_score(self, score: float) -> bool:
+    def _detect_update(self, score: float) -> bool:
         if self._is_maximize:
-            if score > self._best_score:
-                self._best_score = score
-                return True
+            return score + self._eps >= self._best_score
         else:
-            if score < self._best_score:
-                self._best_score = score
-                return True
-        return False
+            return score + self._eps < self._best_score
 
-    def check_epoch(self, epoch: int) -> bool:
-        return epoch >= self._n_epochs
+    def check_score_updated(self, score: float, logging: bool = False) -> bool:
+        if self._detect_update(score):
+            if logging:
+                logger.info(f"Score improved from {self._best_score} to {score}")
+            self._best_score = score
+            self._counter = 0
+            return True
+        else:
+            if self._early_stop_patience is not None:
+                self._counter += 1
+                if logging:
+                    logger.info(
+                        f"EarlyStopping counter: {self._counter} out of {self._early_stop_patience}. best: {self._best_score}"
+                    )
+            return False
+
+    def is_last_epoch(self, epoch: int) -> bool:
+        return epoch == self._n_epochs - 1
+
+    @property
+    def is_early_stopping(self) -> bool:
+        return self._early_stop_patience is not None and self._counter >= self._early_stop_patience
 
     @property
     def best_score(self) -> float:
