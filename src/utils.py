@@ -27,14 +27,13 @@ from tqdm.auto import tqdm
 logger = getLogger(__name__)
 
 
-def seed_everything(seed: int = 42) -> None:
+def seed_everything(seed: int = 42, deterministic: bool = True) -> None:
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True  # type: ignore
-    torch.backends.cudnn.benchmark = False  # type: ignore
+    torch.backends.cudnn.deterministic = deterministic  # type: ignore
     torch.autograd.anomaly_mode.set_detect_anomaly(False)
 
 
