@@ -4,6 +4,8 @@ from typing import Any, Literal, TypeAlias, overload
 import torch
 import transformers
 from torch.optim import lr_scheduler
+from torch.optim.adamw import AdamW
+from torch.optim.optimizer import Optimizer
 
 logger = getLogger(__name__)
 
@@ -28,9 +30,7 @@ def get_params_no_decay(
     return params
 
 
-def get_optimizer(
-    optimizer_name: str, optmizer_params: dict[str, Any], model: torch.nn.Module
-) -> torch.optim.Optimizer:
+def get_optimizer(optimizer_name: str, optmizer_params: dict[str, Any], model: torch.nn.Module) -> Optimizer:
     """Get optimizer from optimizer name
 
     Args:
@@ -43,7 +43,7 @@ def get_optimizer(
     """
     if optimizer_name == "AdamW":
         model_params = get_params_no_decay(model, weight_decay=optmizer_params["weight_decay"])
-        optimizer = torch.optim.AdamW(model_params, **optmizer_params)
+        optimizer = AdamW(model_params, **optmizer_params)
         return optimizer
     raise ValueError(f"Unknown optimizer name: {optimizer_name}")
 
@@ -75,7 +75,7 @@ SchedulersLiteral: TypeAlias = Literal["CosineLRScheduler", "CosineAnnealingWarm
 
 @overload
 def get_scheduler(
-    scheduler_name: Literal["CosineLRScheduler"], scheduler_params: dict[str, Any], optimizer: torch.optim.Optimizer
+    scheduler_name: Literal["CosineLRScheduler"], scheduler_params: dict[str, Any], optimizer: Optimizer
 ) -> lr_scheduler.LambdaLR: ...
 
 
@@ -83,21 +83,21 @@ def get_scheduler(
 def get_scheduler(
     scheduler_name: Literal["CosineAnnealingWarmRestarts"],
     scheduler_params: dict[str, Any],
-    optimizer: torch.optim.Optimizer,
+    optimizer: Optimizer,
 ) -> lr_scheduler.CosineAnnealingWarmRestarts: ...
 
 
 def get_scheduler(
     scheduler_name: SchedulersLiteral,
     scheduler_params: dict[str, Any],
-    optimizer: torch.optim.Optimizer,
+    optimizer: Optimizer,
 ) -> Schedulers:
     """Get scheduler from scheduler name
 
     Args:
         scheduler_name (str): scheduler name
         scheduler_params (dict[str, Any]): scheduler parameters
-        optimizer (torch.optim.Optimizer): optimizer
+        optimizer (torch.optim.optimizer.Optimizer): optimizer
 
     Returns:
         Schedulers: scheduler.
