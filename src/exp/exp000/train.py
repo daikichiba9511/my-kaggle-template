@@ -76,7 +76,8 @@ def train_one_epoch(
         with autocast_mode.autocast(device_type=device.type, enabled=use_amp, dtype=torch.float16):
             output = model(x)
             y_pred = output
-            loss = criterion(y_pred, y)
+            loss_dict = criterion(y_pred, y)
+            loss = loss_dict["loss"]
 
         # --- Update
         if step % grad_accum_steps == 0:
@@ -133,7 +134,8 @@ def valid_one_epoch(
             output = model(x)
 
         y_pred = output
-        loss = criterion(y_pred, y)
+        loss_dict = criterion(y_pred, y)
+        loss = loss_dict["loss"]
         loss_meter.update(loss.detach().cpu().item())
 
         oofs.append(
