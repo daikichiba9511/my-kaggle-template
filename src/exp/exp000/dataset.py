@@ -45,7 +45,7 @@ def init_dataloader(
     fold: int = 0,
     debug: bool = False,
     fulltrain: bool = False,
-    prefetch_factor: int | None = None,
+    prefetch_factor: int | None = 2,
     persistent_workers: bool = False,
 ) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
     if mp.cpu_count() < num_workers:
