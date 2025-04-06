@@ -28,6 +28,7 @@ class CustomModel(nn.Module):
     References:
     1. [数百種類のモデルを備える最強画像認識ライブラリ　「timm」のお手軽な使い方](https://logmi.jp/main/technology/325674)
     """
+
     def __init__(
         self,
         pretrained: bool = True,
@@ -41,7 +42,7 @@ class CustomModel(nn.Module):
         self.backbone = timm.create_model(
             backbone,
             pretrained=pretrained,
-            in_channels=in_channels,
+            in_chans=in_channels,
             num_classes=num_classes,
             features_only=features_only,
         )
