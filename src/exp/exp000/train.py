@@ -7,6 +7,7 @@ import torch.utils.data as torch_data
 import wandb
 from timm.utils import model_ema
 from torch.amp import autocast_mode, grad_scaler
+from torch.optim.optimizer import Optimizer
 from tqdm.auto import tqdm
 
 from src import constants, engine, log, metrics, optim, utils
@@ -33,7 +34,7 @@ def train_one_epoch(
     epoch: int,
     model: nn.Module,
     ema_model: model_ema.ModelEmaV3 | None,
-    optimizer: torch.optim.optimizer.Optimizer,
+    optimizer: Optimizer,
     scheduler: optim.Schedulers,
     criterion: my_loss.LossFn,
     loader: torch_data.DataLoader[dataset.TrainBatch],
@@ -48,7 +49,7 @@ def train_one_epoch(
         epoch: number of epoch
         model: model to train
         ema_model: ema_model.ModelEmaV3
-        optimizer: torch.optim.Optimizer. I almost use AdamW.
+        optimizer: torch.optim.optimizer.Optimizer. I almost use AdamW.
         scheduler: optim.Schedulers. I almost use transformers.get_cosine_schedule_with_warmup
         criterion: LossFn. see get_loss_fn.
         loader: torch_data.DataLoader for training set

@@ -1,6 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
+from torch.optim.optimizer import Optimizer
 
 from src import optim
 
@@ -52,9 +53,7 @@ def test_get_optimizer_should_success(sample_model: nn.Module) -> None:
         optmizer_params={"lr": 0.001, "weight_decay": 1e-5, "eps": 1e-6, "fused": False},
         model=sample_model,
     )
-    assert isinstance(optimizer, torch.optim.Optimizer), (
-        f"E: isinstance(optimizer, torch.optim.Optimizer), A: {type(optimizer)}"
-    )
+    assert isinstance(optimizer, Optimizer), f"E: isinstance(optimizer, Optimizer), A: {type(optimizer)}"
     assert optimizer.__class__.__name__ == "AdamW", (
         f"E: optimizer.__class__.__name__ == 'AdamW', A: {optimizer.__class__.__name__}"
     )

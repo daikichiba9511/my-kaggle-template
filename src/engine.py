@@ -13,6 +13,7 @@ from matplotlib import axes, figure
 from matplotlib import pyplot as plt
 from timm.utils import model_ema
 from torch.amp import grad_scaler
+from torch.optim.optimizer import Optimizer
 from typing_extensions import NotRequired
 
 from src import optim, utils
@@ -145,7 +146,7 @@ CKPT = FullCKPT | WeightOnlyCKPT
 
 def make_checkpoints(
     model: nn.Module,
-    optimizer: torch.optim.optimizer.Optimizer,
+    optimizer: Optimizer,
     scheduler: optim.Schedulers,
     scaler: grad_scaler.GradScaler,
     epoch: int,
@@ -165,7 +166,7 @@ def make_checkpoints(
 
 def load_checkpoints(
     model: nn.Module,
-    optimizer: torch.optim.optimizer.Optimizer,
+    optimizer: Optimizer,
     scheduler: optim.Schedulers,
     scaler: grad_scaler.GradScaler,
     checkpoint: FullCKPT,
@@ -289,7 +290,7 @@ class MetricsMonitor:
 def step(
     step: int,
     model: nn.Module,
-    optimizer: torch.optim.optimizer.Optimizer,
+    optimizer: Optimizer,
     loss: torch.Tensor,
     max_norm: float | None = None,
     scaler: grad_scaler.GradScaler | None = None,
@@ -305,7 +306,7 @@ def step(
     Args:
         step : step number
         model : nn.Module
-        optimizer : torch.optim.optimizer.Optimizer
+        optimizer : Optimizer
         loss : loss tensor
         max_norm : If not None, clip grad norm. Default is None. If None, not clip grad norm
         scaler : If not None, use scaler.step() and scaler.update()
