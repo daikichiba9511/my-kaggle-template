@@ -6,8 +6,6 @@ import torch
 import torch.utils.data as torch_data
 from typing_extensions import TypeAlias
 
-from src import utils
-
 # =============================================================================
 # Dataset
 # =============================================================================
@@ -47,6 +45,8 @@ def init_dataloader(
     fold: int = 0,
     debug: bool = False,
     fulltrain: bool = False,
+    prefetch_factor: int | None = None,
+    persistent_workers: bool = False,
 ) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
     if mp.cpu_count() < num_workers:
         num_workers = mp.cpu_count()
@@ -65,6 +65,10 @@ def init_dataloader(
     if debug:
         df_train = df_train.head(100)
         df_valid = df_valid.head(100)
+
+    if fulltrain:
+        df_train = df
+
     # --- Preprocess
 
     # --- Construct Datasets
@@ -78,9 +82,8 @@ def init_dataloader(
         num_workers=num_workers,
         drop_last=True,
         pin_memory=True,
-        prefetch_factor=2 if num_workers > 0 else None,
-        worker_init_fn=lambda _: utils.seed_everything(42),
-        persistent_workers=True if num_workers > 0 else False,
+        prefetch_factor=prefetch_factor,
+        persistent_workers=persistent_workers,
     )
 
     dl_valid = torch_data.DataLoader(
@@ -90,9 +93,8 @@ def init_dataloader(
         num_workers=num_workers,
         drop_last=False,
         pin_memory=True if num_workers > 0 else False,
-        prefetch_factor=2 if num_workers > 0 else None,
-        worker_init_fn=lambda _: utils.seed_everything(42),
-        persistent_workers=True if num_workers > 0 else False,
+        prefetch_factor=prefetch_factor,
+        persistent_workers=persistent_workers,
     )
 
     return dl_train, dl_valid
