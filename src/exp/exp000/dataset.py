@@ -68,11 +68,11 @@ def init_dataloader(
     # --- Preprocess
 
     # --- Construct Datasets
-    train_ds: torch_data.Dataset[TrainBatch] = MyTrainDataset(df_train)
-    valid_ds: torch_data.Dataset[ValidBatch] = MyValidDataset(df_valid)
+    ds_train: torch_data.Dataset[TrainBatch] = MyTrainDataset(df_train)
+    ds_valid: torch_data.Dataset[ValidBatch] = MyValidDataset(df_valid)
     # --- Construct DataLoaders
-    train_dl = torch_data.DataLoader(
-        dataset=train_ds,
+    dl_train = torch_data.DataLoader(
+        dataset=ds_train,
         batch_size=train_batch_size,
         shuffle=True,
         num_workers=num_workers,
@@ -83,8 +83,8 @@ def init_dataloader(
         persistent_workers=True if num_workers > 0 else False,
     )
 
-    valid_loader = torch_data.DataLoader(
-        dataset=valid_ds,
+    dl_valid = torch_data.DataLoader(
+        dataset=ds_valid,
         batch_size=valid_batch_size,
         shuffle=False,
         num_workers=num_workers,
@@ -95,7 +95,7 @@ def init_dataloader(
         persistent_workers=True if num_workers > 0 else False,
     )
 
-    return train_dl, valid_loader
+    return dl_train, dl_valid
 
 
 def _test_dataloaders() -> None:
