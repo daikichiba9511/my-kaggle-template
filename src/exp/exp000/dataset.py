@@ -113,17 +113,19 @@ def _test_dataloaders() -> None:
         debug=True,
     )
     print("-- Test Train")
-    for i, batch in enumerate(dl_train):
+    train_batch: TrainBatch
+    for i, train_batch in enumerate(dl_train):
         if i > 3:
             break
-        _key, x, y = batch
+        _key, x, y = train_batch
         print(f"{_key=}, {x.shape=}, {y.shape=}")
 
     print("-- Test Valid")
-    for i, batch in enumerate(dl_valid):
+    valid_batch: ValidBatch
+    for i, valid_batch in enumerate(dl_valid):
         if i > 3:
             break
-        _key, x, y = batch
+        _key, x, y = valid_batch
         print(f"{_key=}, {x.shape=}, {y.shape=}")
 
 

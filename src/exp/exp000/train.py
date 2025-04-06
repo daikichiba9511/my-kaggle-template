@@ -70,6 +70,7 @@ def train_one_epoch(
     update_per_epoch = (len(loader) + grad_accum_steps - 1) // grad_accum_steps
     num_updates = update_per_epoch * epoch
 
+    batch: dataset.TrainBatch
     for step, batch in pbar:
         _sample_id, x, y = batch
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
@@ -127,6 +128,7 @@ def valid_one_epoch(
     pbar = tqdm(enumerate(loader), total=len(loader), desc="Valid", dynamic_ncols=True)
     loss_meter = engine.AverageMeter("valid/loss")
     oofs: list[pl.DataFrame] = []
+    batch: dataset.ValidBatch
     for batch_idx, batch in pbar:
         sample_id, x, y = batch
         x = x.to(device, non_blocking=True)
